@@ -14,5 +14,13 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  return NextResponse.json({ items: data });
+  return NextResponse.json({
+    items: data,
+    _debug: {
+      supabaseUrl: process.env.SUPABASE_URL,
+      hasServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      hasAnon: !!process.env.SUPABASE_ANON_KEY,
+      count: data?.length,
+    },
+  });
 }
