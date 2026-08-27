@@ -7,12 +7,15 @@ const nextConfig = {
     // to rasterize PDF pages) fails with "Cannot find module" in production
     // even though it works locally.
     serverComponentsExternalPackages: ['exceljs', 'pdf-to-img', 'pdfjs-dist', '@napi-rs/canvas'],
-    // Belt-and-suspenders: @napi-rs/canvas's platform binary is loaded via
-    // a require() whose specifier depends on process.platform/arch, which
-    // @vercel/nft's static trace can't always resolve — force-include the
-    // linux-x64-gnu binary Vercel's Node.js runtime actually needs.
+    // Belt-and-suspenders: @vercel/nft's static trace misses several files
+    // these packages resolve at runtime (require.resolve('pdfjs-dist/package.json'),
+    // the platform-specific @napi-rs/canvas binary chosen by
+    // process.platform/arch, etc.) — force-include each package wholesale
+    // for the one route that needs them rather than chase individual files.
     outputFileTracingIncludes: {
       '/api/generate': [
+        './node_modules/pdf-to-img/**/*',
+        './node_modules/pdfjs-dist/**/*',
         './node_modules/@napi-rs/canvas/**/*',
         './node_modules/@napi-rs/canvas-linux-x64-gnu/**/*',
       ],
