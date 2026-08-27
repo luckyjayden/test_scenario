@@ -15,8 +15,17 @@ create table if not exists public.generations (
   step_count integer,
   source_pdf_path text,
   output_xlsx_path text,
-  output_filename text
+  output_filename text,
+  progress_current integer,
+  progress_total integer
 );
+
+-- Added after initial provisioning (batched extraction progress tracking) —
+-- kept as an explicit alter so re-running this file against the original
+-- table (created before these columns existed) still picks them up.
+alter table public.generations
+  add column if not exists progress_current integer,
+  add column if not exists progress_total integer;
 
 create index if not exists generations_created_at_idx on public.generations (created_at desc);
 

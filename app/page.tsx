@@ -13,6 +13,7 @@ export default function UploadPage() {
   const [author, setAuthor] = useState('');
   const [fileName, setFileName] = useState<string | null>(null);
   const [summary, setSummary] = useState<{ scenarioCount: number; stepCount: number } | null>(null);
+  const [progress, setProgress] = useState<{ current: number; total: number } | null>(null);
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -53,12 +54,35 @@ export default function UploadPage() {
       }
 
       setStatus('generating');
+      setProgress(null);
 
-      const res = await fetch('/api/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ generationId, author: author || '작성자 미입력' }),
-      });
+      // /api/generate is one long synchronous call (it processes the PDF
+      // in page batches internally to stay under OpenAI's per-minute token
+      // limit — see lib/ai/extract.ts), so progress has to be polled from
+      // the side rather than read off the fetch itself.
+      const pollId = setInterval(async () => {
+        try {
+          const statusRes = await fetch(`/api/status/${generationId}`);
+          if (!statusRes.ok) return;
+          const { progress_current, progress_total } = await statusRes.json();
+          if (progress_current != null && progress_total != null) {
+            setProgress({ current: progress_current, total: progress_total });
+          }
+        } catch {
+          /* transient poll failure — next tick will retry */
+        }
+      }, 1500);
+
+      let res: Response;
+      try {
+        res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ generationId, author: author || '작성자 미입력' }),
+        });
+      } finally {
+        clearInterval(pollId);
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `생성 실패 (HTTP ${res.status})`);
@@ -126,7 +150,8 @@ export default function UploadPage() {
           }}
         >
           {status === 'uploading' && 'PDF 업로드 중...'}
-          {status === 'generating' && '생성 중... (수 십 초 ~ 수 분 소요될 수 있어요)'}
+          {status === 'generating' &&
+            (progress ? `생성 중... (배치 ${progress.current}/${progress.total} 처리 중)` : '생성 중... (수 십 초 ~ 수 분 소요될 수 있어요)')}
           {status !== 'uploading' && status !== 'generating' && '시나리오 엑셀 생성'}
         </button>
       </form>

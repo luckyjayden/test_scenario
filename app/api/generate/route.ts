@@ -52,7 +52,9 @@ export async function POST(req: NextRequest) {
     }
     const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
 
-    const extraction = await extractTestScenarios(pdfBuffer);
+    const extraction = await extractTestScenarios(pdfBuffer, async (current, total) => {
+      await supabase.from('generations').update({ progress_current: current, progress_total: total }).eq('id', generationId);
+    });
 
     const { buffer, scenarioCount, stepCount } = await buildScenarioWorkbook({
       extraction,
