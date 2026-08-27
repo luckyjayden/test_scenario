@@ -15,7 +15,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="ko">
       <body className={notoSansKr.className}>
         <header style={{ borderBottom: '1px solid var(--glass-border)', background: 'var(--bg-elevated)' }}>
-          <nav style={{ maxWidth: 880, margin: '0 auto', padding: '18px 20px', display: 'flex', gap: 24, alignItems: 'center' }}>
+          <nav style={{ maxWidth: 1120, margin: '0 auto', padding: '18px 10px', display: 'flex', gap: 24, alignItems: 'center' }}>
             <strong style={{ fontSize: 16, fontWeight: 800 }}>테스트 시나리오 생성기</strong>
             <Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
               생성
@@ -25,7 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             </Link>
           </nav>
         </header>
-        <main style={{ maxWidth: 880, margin: '0 auto', padding: '40px 20px' }}>{children}</main>
+        <main style={{ maxWidth: 1120, margin: '0 auto', padding: '40px 10px' }}>{children}</main>
       </body>
     </html>
   );

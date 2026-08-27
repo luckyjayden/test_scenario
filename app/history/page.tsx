@@ -51,9 +51,9 @@ export default function HistoryPage() {
         <div className="glass" style={{ overflow: 'hidden', padding: 0 }}>
           <table className="table">
             <colgroup>
-              <col style={{ width: 168 }} />
+              <col style={{ width: 100 }} />
+              <col style={{ width: 240 }} />
               <col />
-              <col style={{ width: 110 }} />
               <col style={{ width: 128 }} />
               <col style={{ width: 92 }} />
             </colgroup>
@@ -69,7 +69,12 @@ export default function HistoryPage() {
             <tbody>
               {items.map((item) => (
                 <tr key={item.id}>
-                  <td className="col-narrow">{new Date(item.created_at).toLocaleString('ko-KR')}</td>
+                  <td className="col-narrow">
+                    <div>{new Date(item.created_at).toLocaleDateString('ko-KR')}</div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: 12 }}>
+                      {new Date(item.created_at).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  </td>
                   <td className="col-wide" title={item.source_filename}>
                     {item.source_filename}
                   </td>

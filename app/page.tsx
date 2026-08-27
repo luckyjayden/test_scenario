@@ -121,7 +121,7 @@ export default function UploadPage() {
         고정 서식 파일에 맞춘 엑셀(.xlsx)을 생성해 바로 다운로드해드립니다.
       </p>
 
-      <form onSubmit={handleSubmit} className="glass" style={{ padding: 28 }}>
+      <form onSubmit={handleSubmit} className="glass" style={{ padding: 28, maxWidth: 560 }}>
         <label style={{ display: 'block', marginBottom: 20 }}>
           <span className="label">화면설계서 PDF</span>
           <input type="file" name="pdf" accept="application/pdf" required className="input" />
