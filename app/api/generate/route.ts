@@ -62,7 +62,11 @@ export async function POST(req: NextRequest) {
     });
 
     const outputFilename = `${extraction.service_name || '테스트'}_${extraction.screen_scope_name || '시나리오'}_테스트시나리오_v1.0.xlsx`;
-    const xlsxPath = `${generationId}/${outputFilename}`;
+    // Supabase Storage rejects object keys containing non-ASCII characters
+    // (outputFilename is Korean) — keep the storage key ASCII-only and pass
+    // the real Korean filename separately via output_filename, which
+    // app/api/download already uses as the signed URL's `download` name.
+    const xlsxPath = `${generationId}/output.xlsx`;
 
     const { error: xlsxUploadErr } = await supabase.storage
       .from(STORAGE_BUCKET)

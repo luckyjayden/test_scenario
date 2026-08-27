@@ -14,20 +14,5 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
-  let keyClaims: unknown = null;
-  try {
-    const payload = process.env.SUPABASE_SERVICE_ROLE_KEY!.split('.')[1];
-    keyClaims = JSON.parse(Buffer.from(payload, 'base64').toString());
-  } catch {
-    keyClaims = 'unparseable';
-  }
-
-  return NextResponse.json({
-    items: data,
-    _debug: {
-      supabaseUrl: process.env.SUPABASE_URL,
-      keyClaims,
-      count: data?.length,
-    },
-  });
+  return NextResponse.json({ items: data });
 }

@@ -25,7 +25,15 @@ function getClient(): SupabaseClient {
     );
   }
 
-  cached = createClient(url, key, { auth: { persistSession: false } });
+  cached = createClient(url, key, {
+    auth: { persistSession: false },
+    // Next.js patches the global fetch to cache responses by default, even
+    // in Route Handlers — without opting out here, a request made while a
+    // route was briefly returning an empty/stale result (e.g. right after
+    // provisioning, before any row existed) can get cached indefinitely
+    // and keep being served regardless of `export const dynamic`.
+    global: { fetch: (input, init) => fetch(input, { ...init, cache: 'no-store' }) },
+  });
   return cached;
 }
 
