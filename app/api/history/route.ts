@@ -14,12 +14,19 @@ export async function GET() {
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
+  let keyRole: string | null = null;
+  try {
+    const payload = process.env.SUPABASE_SERVICE_ROLE_KEY!.split('.')[1];
+    keyRole = JSON.parse(Buffer.from(payload, 'base64').toString()).role;
+  } catch {
+    keyRole = 'unparseable';
+  }
+
   return NextResponse.json({
     items: data,
     _debug: {
       supabaseUrl: process.env.SUPABASE_URL,
-      hasServiceRole: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      hasAnon: !!process.env.SUPABASE_ANON_KEY,
+      keyRole,
       count: data?.length,
     },
   });
