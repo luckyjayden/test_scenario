@@ -6,9 +6,10 @@
 
 ## 구조
 
-- `app/page.tsx` — 업로드 화면
+- `app/page.tsx` — 업로드 화면. PDF는 이 페이지에서 브라우저가 Supabase Storage로 직접 업로드하고(Vercel 서버리스 함수의 4.5MB 요청 본문 제한을 우회하기 위함), `/api/generate`에는 스토리지 경로만 전달합니다.
 - `app/history/page.tsx` — 생성 이력 화면
-- `app/api/generate/route.ts` — PDF 업로드 → OpenAI API로 시나리오 추출 → 엑셀 생성 → Supabase 저장 → 파일 응답
+- `app/api/upload-url/route.ts` — 이력 row 생성 + Supabase Storage 서명된 업로드 URL 발급
+- `app/api/generate/route.ts` — 업로드된 PDF를 Storage에서 내려받아 OpenAI API로 시나리오 추출 → 엑셀 생성 → Supabase 저장 → 파일 응답
 - `app/api/history/route.ts`, `app/api/download/[id]/route.ts` — 이력 조회/재다운로드
 - `lib/ai/` — OpenAI API 호출(`extract.ts`, PDF를 페이지별 이미지로 변환해 vision 입력으로 전달), 추출 규칙 프롬프트(`guideRules.ts`), 구조화 출력 스키마(`schema.ts`)
 - `lib/excel/build.ts` — 서식 파일에 맞춰 실제 엑셀을 만드는 핵심 로직 (기존에 Python(openpyxl)으로 수작업 검증한 로직을 ExcelJS로 그대로 이식)
@@ -46,8 +47,12 @@ npm run test:excel   # fixture.json(땡겨요 로그인/회원가입 137개 스�
 | `SUPABASE_URL` | `https://ranjexfefrfnhmbybffq.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase 대시보드 → 이 프로젝트 → Project Settings → API → `service_role` 키를 복사 (비밀 키이므로 저는 조회할 수 없어 직접 가져오셔야 해요) |
 | `SUPABASE_ANON_KEY` | (service_role 대신 써도 됨) `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhbmpleGZlZnJmbmhtYnliZmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NTIyNTQsImV4cCI6MjEwMzMyODI1NH0.EMOMMCEfKBoTQEyscvg3GQ2axjv_hwcsPWXakfQIe2U` |
+| `NEXT_PUBLIC_SUPABASE_URL` | `SUPABASE_URL`과 같은 값. 브라우저가 PDF를 Storage에 직접 업로드할 때 씀. |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 위 `SUPABASE_ANON_KEY`와 같은 값. `NEXT_PUBLIC_` 접두사가 붙어 클라이언트 번들에 노출되지만, RLS가 permissive하고 실제 업로드 권한은 서버가 발급한 서명된 URL 토큰이 담당하므로 안전합니다. |
 
 `SUPABASE_SERVICE_ROLE_KEY`와 `SUPABASE_ANON_KEY` 중 하나만 있으면 됩니다 (service_role을 우선 사용). 이 앱의 RLS 정책이 이미 전체 허용으로 되어 있어(개인용 단일 사용자 도구라 별도 로그인 없음) anon 키로도 충분히 동작합니다. 나중에 여러 사람이 쓰는 도구로 키우실 거면, 이 RLS 정책과 인증을 반드시 강화해주세요.
+
+`NEXT_PUBLIC_` 변수는 빌드 타임에 클라이언트 번들에 박히므로, Vercel에서 값을 추가/변경한 뒤에는 반드시 재배포해야 반영됩니다.
 
 ## Vercel 배포
 

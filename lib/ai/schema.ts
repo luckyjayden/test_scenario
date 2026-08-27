@@ -40,7 +40,7 @@ export const EXTRACTION_SCHEMA = {
                 properties: {
                   page: {
                     type: 'string',
-                    description: "'[화면ID]  [화면명]' 형식(화면ID와 화면명 사이 공백 2칸). 화면ID가 없으면 화면명만.",
+                    description: "'[화면ID]  [화면명]' 형식(화면ID와 화면명 사이 공백 2칸). 화면ID가 없으면 '[화면명]' 형식으로 표기한다.",
                   },
                   step: {
                     type: 'string',

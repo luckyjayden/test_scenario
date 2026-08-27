@@ -117,7 +117,15 @@ export async function buildScenarioWorkbook(input: BuildInput): Promise<BuildOut
     const cell = scenario.getCell(`${col}${row}`);
     cell.value = value as any;
     const tmpl = styleTemplate[col];
-    cell.font = cloneStyle(tmpl.font);
+    // The template's example rows (B4/D4) are styled italic + gray to read
+    // as placeholder text — that's not meant to carry over to the actual
+    // generated content, which should render as normal black text.
+    const font = cloneStyle(tmpl.font);
+    if (font) {
+      font.italic = false;
+      font.color = { argb: 'FF000000' };
+    }
+    cell.font = font;
     cell.fill = fillWhite ? whiteFillOf(col) : cloneStyle(greyFill);
     cell.border = cloneStyle(tmpl.border);
     cell.alignment = cloneStyle(tmpl.alignment);

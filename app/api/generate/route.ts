@@ -15,84 +15,84 @@ function todayISO() {
 }
 
 export async function POST(req: NextRequest) {
-  let generationId: string | null = null;
+  // The PDF itself never passes through this function's request body — it's
+  // uploaded straight to Supabase Storage via a signed URL from
+  // app/api/upload-url (Vercel Functions hard-cap request bodies at 4.5MB,
+  // which most PPT->PDF 화면설계서 exports exceed). This request just
+  // carries the generationId + storage path created by that step.
+  const { generationId, author } = await req.json().catch(() => ({}));
+
+  if (!generationId || typeof generationId !== 'string') {
+    return NextResponse.json({ error: 'generationId가 필요합니다.' }, { status: 400 });
+  }
+
+  const { data: row, error: rowErr } = await supabase
+    .from('generations')
+    .select('source_filename')
+    .eq('id', generationId)
+    .single();
+
+  if (rowErr || !row) {
+    return NextResponse.json({ error: '업로드 이력을 찾을 수 없습니다.' }, { status: 404 });
+  }
+
+  // Defensive NFC normalization in case this row's filename was written
+  // before the client started normalizing (see app/page.tsx) — macOS
+  // reports Korean filenames in decomposed (NFD) form, which renders as
+  // broken jamo once it lands in the generated xlsx.
+  const sourceFilename = (row.source_filename as string).normalize('NFC');
+  const pdfPath = `${generationId}/source.pdf`;
 
   try {
-    const formData = await req.formData();
-    const file = formData.get('pdf');
-    const author = (formData.get('author') as string) || '작성자 미입력';
-
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: 'PDF 파일이 필요합니다.' }, { status: 400 });
+    const { data: pdfBlob, error: downloadErr } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .download(pdfPath);
+    if (downloadErr || !pdfBlob) {
+      throw new ExtractionError(downloadErr?.message || '업로드된 PDF를 찾지 못했습니다. 다시 업로드해주세요.');
     }
-    if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
-      return NextResponse.json({ error: 'PDF 파일만 업로드할 수 있습니다.' }, { status: 400 });
-    }
-
-    const pdfBuffer = Buffer.from(await file.arrayBuffer());
-
-    // create the history row up front (status=processing) so a failure
-    // partway through still leaves a traceable record.
-    const { data: inserted, error: insertErr } = await supabase
-      .from('generations')
-      .insert({ source_filename: file.name, status: 'processing' })
-      .select('id')
-      .single();
-    if (insertErr) {
-      console.error('[generate] failed to create history row:', insertErr.message);
-    } else {
-      generationId = inserted.id;
-    }
+    const pdfBuffer = Buffer.from(await pdfBlob.arrayBuffer());
 
     const extraction = await extractTestScenarios(pdfBuffer);
 
     const { buffer, scenarioCount, stepCount } = await buildScenarioWorkbook({
       extraction,
-      sourceFilename: file.name,
-      author,
+      sourceFilename,
+      author: (author as string) || '작성자 미입력',
       today: todayISO(),
     });
 
     const outputFilename = `${extraction.service_name || '테스트'}_${extraction.screen_scope_name || '시나리오'}_테스트시나리오_v1.0.xlsx`;
+    const xlsxPath = `${generationId}/${outputFilename}`;
 
-    if (generationId) {
-      const pdfPath = `${generationId}/source.pdf`;
-      const xlsxPath = `${generationId}/${outputFilename}`;
+    const { error: xlsxUploadErr } = await supabase.storage
+      .from(STORAGE_BUCKET)
+      .upload(xlsxPath, buffer, {
+        contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        upsert: true,
+      });
+    if (xlsxUploadErr) console.error('[generate] xlsx upload failed:', xlsxUploadErr.message);
 
-      const [pdfUpload, xlsxUpload] = await Promise.all([
-        supabase.storage.from(STORAGE_BUCKET).upload(pdfPath, pdfBuffer, {
-          contentType: 'application/pdf',
-          upsert: true,
-        }),
-        supabase.storage.from(STORAGE_BUCKET).upload(xlsxPath, buffer, {
-          contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-          upsert: true,
-        }),
-      ]);
-
-      if (pdfUpload.error) console.error('[generate] pdf upload failed:', pdfUpload.error.message);
-      if (xlsxUpload.error) console.error('[generate] xlsx upload failed:', xlsxUpload.error.message);
-
-      await supabase
-        .from('generations')
-        .update({
-          status: 'success',
-          service_name: extraction.service_name,
-          screen_name: extraction.screen_scope_name,
-          scenario_count: scenarioCount,
-          step_count: stepCount,
-          source_pdf_path: pdfUpload.error ? null : pdfPath,
-          output_xlsx_path: xlsxUpload.error ? null : xlsxPath,
-          output_filename: outputFilename,
-        })
-        .eq('id', generationId);
-    }
+    await supabase
+      .from('generations')
+      .update({
+        status: 'success',
+        service_name: extraction.service_name,
+        screen_name: extraction.screen_scope_name,
+        scenario_count: scenarioCount,
+        step_count: stepCount,
+        source_pdf_path: pdfPath,
+        output_xlsx_path: xlsxUploadErr ? null : xlsxPath,
+        output_filename: outputFilename,
+      })
+      .eq('id', generationId);
 
     return new NextResponse(new Uint8Array(buffer), {
       status: 200,
       headers: {
         'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'Content-Disposition': `attachment; filename="${encodeURIComponent(outputFilename)}"`,
+        // RFC 5987 encoding — a plain `filename="%ED..."` is not decoded by
+        // browsers (the percent-encoded literal ends up as the filename).
+        'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(outputFilename)}`,
         'X-Scenario-Count': String(scenarioCount),
         'X-Step-Count': String(stepCount),
         'X-Output-Filename': encodeURIComponent(outputFilename),
@@ -101,12 +101,10 @@ export async function POST(req: NextRequest) {
   } catch (err) {
     console.error('[generate] failed:', err);
 
-    if (generationId) {
-      await supabase
-        .from('generations')
-        .update({ status: 'failed', error_message: err instanceof Error ? err.message : String(err) })
-        .eq('id', generationId);
-    }
+    await supabase
+      .from('generations')
+      .update({ status: 'failed', error_message: err instanceof Error ? err.message : String(err) })
+      .eq('id', generationId);
 
     const message = err instanceof ExtractionError ? err.message : '엑셀 생성 중 오류가 발생했습니다.';
     const status = err instanceof ExtractionError ? 422 : 500;

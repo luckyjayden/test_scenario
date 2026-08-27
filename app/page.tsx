@@ -1,8 +1,11 @@
 'use client';
 
 import { useState } from 'react';
+import { supabaseBrowser } from '@/lib/supabaseBrowser';
 
-type Status = 'idle' | 'uploading' | 'error' | 'done';
+const STORAGE_BUCKET = 'test-scenario-files';
+
+type Status = 'idle' | 'uploading' | 'generating' | 'error' | 'done';
 
 export default function UploadPage() {
   const [status, setStatus] = useState<Status>('idle');
@@ -24,15 +27,38 @@ export default function UploadPage() {
       return;
     }
 
-    const fd = new FormData();
-    fd.append('pdf', file);
-    fd.append('author', author || '작성자 미입력');
-
     setStatus('uploading');
     setFileName(file.name);
 
     try {
-      const res = await fetch('/api/generate', { method: 'POST', body: fd });
+      const urlRes = await fetch('/api/upload-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // macOS reports Korean filenames in decomposed (NFD) Unicode form —
+        // normalize to NFC so it renders correctly once it lands in the
+        // generated xlsx (표지/변경 히스토리 sheets).
+        body: JSON.stringify({ filename: file.name.normalize('NFC') }),
+      });
+      if (!urlRes.ok) {
+        const body = await urlRes.json().catch(() => ({}));
+        throw new Error(body.error || `업로드 준비 실패 (HTTP ${urlRes.status})`);
+      }
+      const { generationId, path, token } = await urlRes.json();
+
+      const { error: uploadErr } = await supabaseBrowser.storage
+        .from(STORAGE_BUCKET)
+        .uploadToSignedUrl(path, token, file, { contentType: 'application/pdf' });
+      if (uploadErr) {
+        throw new Error(`PDF 업로드 실패: ${uploadErr.message}`);
+      }
+
+      setStatus('generating');
+
+      const res = await fetch('/api/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ generationId, author: author || '작성자 미입력' }),
+      });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || `생성 실패 (HTTP ${res.status})`);
@@ -40,7 +66,8 @@ export default function UploadPage() {
 
       const scenarioCount = Number(res.headers.get('X-Scenario-Count') || '0');
       const stepCount = Number(res.headers.get('X-Step-Count') || '0');
-      const outName = res.headers.get('X-Output-Filename') || 'test-scenario.xlsx';
+      const outNameHeader = res.headers.get('X-Output-Filename');
+      const outName = outNameHeader ? decodeURIComponent(outNameHeader) : 'test-scenario.xlsx';
 
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
@@ -87,18 +114,20 @@ export default function UploadPage() {
 
         <button
           type="submit"
-          disabled={status === 'uploading'}
+          disabled={status === 'uploading' || status === 'generating'}
           style={{
-            background: status === 'uploading' ? '#999' : '#111',
+            background: status === 'uploading' || status === 'generating' ? '#999' : '#111',
             color: '#fff',
             border: 'none',
             borderRadius: 6,
             padding: '10px 18px',
             fontSize: 14,
-            cursor: status === 'uploading' ? 'default' : 'pointer',
+            cursor: status === 'uploading' || status === 'generating' ? 'default' : 'pointer',
           }}
         >
-          {status === 'uploading' ? '생성 중... (수 십 초 ~ 수 분 소요될 수 있어요)' : '시나리오 엑셀 생성'}
+          {status === 'uploading' && 'PDF 업로드 중...'}
+          {status === 'generating' && '생성 중... (수 십 초 ~ 수 분 소요될 수 있어요)'}
+          {status !== 'uploading' && status !== 'generating' && '시나리오 엑셀 생성'}
         </button>
       </form>
 
