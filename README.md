@@ -9,12 +9,14 @@
 - `app/page.tsx` — 업로드 화면. PDF는 이 페이지에서 브라우저가 Supabase Storage로 직접 업로드하고(Vercel 서버리스 함수의 4.5MB 요청 본문 제한을 우회하기 위함), `/api/generate`에는 스토리지 경로만 전달합니다.
 - `app/history/page.tsx` — 생성 이력 화면
 - `app/api/upload-url/route.ts` — 이력 row 생성 + Supabase Storage 서명된 업로드 URL 발급
-- `app/api/generate/route.ts` — 업로드된 PDF를 Storage에서 내려받아 OpenAI API로 시나리오 추출 → 엑셀 생성 → Supabase 저장 → 파일 응답
+- `app/api/generate/route.ts` — 업로드된 PDF를 Storage에서 내려받아 OpenAI API로 시나리오 추출(페이지 배치 처리) → 엑셀 생성 → Supabase 저장 → 파일 응답
+- `app/api/status/[id]/route.ts` — 생성 진행률(배치 N/M) 조회용 — 업로드 화면이 폴링
 - `app/api/history/route.ts`, `app/api/download/[id]/route.ts` — 이력 조회/재다운로드
-- `lib/ai/` — OpenAI API 호출(`extract.ts`, PDF를 페이지별 이미지로 변환해 vision 입력으로 전달), 추출 규칙 프롬프트(`guideRules.ts`), 구조화 출력 스키마(`schema.ts`)
+- `lib/ai/` — OpenAI API 호출(`extract.ts`, PDF를 페이지별 이미지로 변환해 배치 단위로 vision 입력 전달), 추출 규칙 프롬프트(`guideRules.ts`), 구조화 출력 스키마(`schema.ts`)
 - `lib/excel/build.ts` — 서식 파일에 맞춰 실제 엑셀을 만드는 핵심 로직 (기존에 Python(openpyxl)으로 수작업 검증한 로직을 ExcelJS로 그대로 이식)
 - `lib/excel/templateData.ts` — 서식 파일(`assets/template.xlsx`)을 base64로 임베드한 것 (Vercel 서버리스 환경에서 런타임에 파일을 읽지 않고 모듈로 번들되도록)
 - `supabase/schema.sql` — DB 테이블 + 스토리지 버킷 정의 (이미 아래 프로젝트에 적용되어 있음)
+- `CHANGELOG.md` — 버전별 변경 이력
 
 ## 이미 준비된 것
 
