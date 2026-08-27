@@ -162,8 +162,19 @@ a {
 
 .table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 13px;
+}
+
+.table .col-wide {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table .col-narrow {
+  white-space: nowrap;
 }
 
 .table th {
