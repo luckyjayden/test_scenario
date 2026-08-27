@@ -68,33 +68,48 @@ export async function extractTestScenarios(pdfBuffer: Buffer): Promise<Extractio
     throw new ExtractionError('PDF에서 페이지를 읽지 못했습니다. 파일이 손상되지 않았는지 확인해주세요.');
   }
 
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  // maxRetries covers the common case where a request lands just over the
+  // account's per-minute token limit (e.g. Tier 1 orgs cap gpt-4o at
+  // 30,000 TPM, and a full-page image set can land right on that edge) —
+  // the SDK backs off and retries automatically on 429s.
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 5 });
 
-  const completion = await client.chat.completions.create({
-    model: MODEL,
-    max_completion_tokens: 16000,
-    messages: [
-      { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'text',
-            text: '이 화면설계서 전체를 분석해서 테스트 시나리오를 추출해줘. 아래 이미지는 문서의 페이지 순서대로 첨부되어 있어.',
-          },
-          ...pageContent,
-        ],
+  let completion;
+  try {
+    completion = await client.chat.completions.create({
+      model: MODEL,
+      max_completion_tokens: 16000,
+      messages: [
+        { role: 'system', content: EXTRACTION_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'text',
+              text: '이 화면설계서 전체를 분석해서 테스트 시나리오를 추출해줘. 아래 이미지는 문서의 페이지 순서대로 첨부되어 있어.',
+            },
+            ...pageContent,
+          ],
+        },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: EXTRACTION_TOOL_NAME,
+          strict: true,
+          schema: EXTRACTION_SCHEMA.input_schema,
+        },
       },
-    ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: {
-        name: EXTRACTION_TOOL_NAME,
-        strict: true,
-        schema: EXTRACTION_SCHEMA.input_schema,
-      },
-    },
-  });
+    });
+  } catch (err) {
+    if (err instanceof OpenAI.RateLimitError) {
+      throw new ExtractionError(
+        'OpenAI 계정의 분당 토큰 사용량 한도를 초과했습니다. 잠시 후 다시 시도하거나, 페이지 수가 적은 파일로 나눠서 업로드해주세요. ' +
+          '반복된다면 OpenAI 대시보드(platform.openai.com/settings/organization/limits)에서 사용량 한도를 확인해주세요.'
+      );
+    }
+    throw err;
+  }
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) {
