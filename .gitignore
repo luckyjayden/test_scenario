@@ -1,0 +1,8 @@
+node_modules/
+.next/
+.env
+.env.local
+*.log
+test-output.xlsx
+test-output.pdf
+t_page*.png
