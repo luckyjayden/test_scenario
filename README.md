@@ -17,6 +17,7 @@
 - `lib/excel/templateData.ts` — 서식 파일(`assets/template.xlsx`)을 base64로 임베드한 것 (Vercel 서버리스 환경에서 런타임에 파일을 읽지 않고 모듈로 번들되도록)
 - `supabase/schema.sql` — DB 테이블 + 스토리지 버킷 정의 (이미 아래 프로젝트에 적용되어 있음)
 - `CHANGELOG.md` — 버전별 변경 이력
+- `DESIGN_SYSTEM.md` — 컬러/타이포/컴포넌트 디자인 시스템 (`app/globals.css`에 구현)
 
 ## 이미 준비된 것
 

@@ -2,6 +2,15 @@
 
 이 프로젝트의 버전별 변경 사항을 기록합니다. [Keep a Changelog](https://keepachangelog.com/) 형식을 따르되, 개인 프로젝트 특성상 날짜/커밋 기준으로 단순화했습니다.
 
+## [1.3.0] - 2026-08-27
+
+### 추가
+- `DESIGN_SYSTEM.md` — 토스증권(corp.tossinvest.com) 스타일(미니멀 산세리프·굵은 헤드라인·절제된 포인트 컬러)에 블랙 배경 + 글래스모피즘을 결합한 다크 테마 디자인 시스템 문서.
+- `app/globals.css` — 컬러/타이포/간격 토큰과 `.glass`, `.btn-primary`, `.badge-*`, `.table` 등 재사용 클래스.
+
+### 변경
+- 업로드 화면(`app/page.tsx`), 이력 화면(`app/history/page.tsx`), 전역 레이아웃(`app/layout.tsx`)을 새 디자인 시스템으로 전면 리디자인. 폰트는 Noto Sans KR(`next/font/google`)로 교체.
+
 ## [1.2.0] - 2026-08-27
 
 ### 변경

@@ -1,5 +1,9 @@
 import type { Metadata } from 'next';
+import { Noto_Sans_KR } from 'next/font/google';
 import Link from 'next/link';
+import './globals.css';
+
+const notoSansKr = Noto_Sans_KR({ subsets: ['latin'], weight: ['400', '500', '700', '900'] });
 
 export const metadata: Metadata = {
   title: '테스트 시나리오 생성기',
@@ -9,19 +13,19 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="ko">
-      <body style={{ margin: 0, fontFamily: '-apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif', background: '#f7f7f8', color: '#1a1a1a' }}>
-        <header style={{ borderBottom: '1px solid #e2e2e5', background: '#fff' }}>
-          <nav style={{ maxWidth: 880, margin: '0 auto', padding: '16px 20px', display: 'flex', gap: 20, alignItems: 'center' }}>
-            <strong style={{ fontSize: 16 }}>테스트 시나리오 생성기</strong>
-            <Link href="/" style={{ color: '#444', textDecoration: 'none', fontSize: 14 }}>
+      <body className={notoSansKr.className}>
+        <header style={{ borderBottom: '1px solid var(--glass-border)', background: 'var(--bg-elevated)' }}>
+          <nav style={{ maxWidth: 880, margin: '0 auto', padding: '18px 20px', display: 'flex', gap: 24, alignItems: 'center' }}>
+            <strong style={{ fontSize: 16, fontWeight: 800 }}>테스트 시나리오 생성기</strong>
+            <Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
               생성
             </Link>
-            <Link href="/history" style={{ color: '#444', textDecoration: 'none', fontSize: 14 }}>
+            <Link href="/history" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
               이력
             </Link>
           </nav>
         </header>
-        <main style={{ maxWidth: 880, margin: '0 auto', padding: '32px 20px' }}>{children}</main>
+        <main style={{ maxWidth: 880, margin: '0 auto', padding: '40px 20px' }}>{children}</main>
       </body>
     </html>
   );

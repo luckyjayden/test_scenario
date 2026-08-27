@@ -1,0 +1,186 @@
+:root {
+  --bg: #0a0a0c;
+  --bg-elevated: #141417;
+  --glass-bg: rgba(255, 255, 255, 0.06);
+  --glass-bg-hover: rgba(255, 255, 255, 0.09);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --text-primary: #f5f6f8;
+  --text-secondary: #9aa0a8;
+  --text-tertiary: #6b7280;
+  --accent: #3182f6;
+  --accent-hover: #1b64da;
+  --success: #3ddc84;
+  --danger: #ff5b5b;
+  --warning: #ffc542;
+  --radius-panel: 20px;
+  --radius-control: 12px;
+  --shadow-glass: 0 8px 32px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text-primary);
+  position: relative;
+  min-height: 100vh;
+}
+
+/* Soft blue glow behind the content so glass panels have something to
+   refract — a flat single-color background makes backdrop-filter blur
+   invisible. */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  background: radial-gradient(600px circle at 15% 0%, rgba(49, 130, 246, 0.16), transparent 60%),
+    radial-gradient(500px circle at 85% 20%, rgba(61, 220, 132, 0.08), transparent 60%);
+}
+
+a {
+  color: inherit;
+}
+
+.glass {
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-panel);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  box-shadow: var(--shadow-glass);
+}
+
+.label {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.input {
+  width: 100%;
+  padding: 12px 14px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--glass-bg);
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-control);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.input:focus {
+  border-color: var(--accent);
+}
+
+.input::placeholder {
+  color: var(--text-tertiary);
+}
+
+.input[type='file'] {
+  padding: 10px 14px;
+  color: var(--text-secondary);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  font-weight: 700;
+  padding: 12px 20px;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.15s ease;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+  transform: translateY(-1px);
+}
+
+.btn-primary:disabled {
+  background: var(--glass-bg-hover);
+  color: var(--text-secondary);
+  cursor: default;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.badge-success {
+  background: rgba(61, 220, 132, 0.15);
+  color: var(--success);
+}
+
+.badge-danger {
+  background: rgba(255, 91, 91, 0.15);
+  color: var(--danger);
+}
+
+.badge-warning {
+  background: rgba(255, 197, 66, 0.15);
+  color: var(--warning);
+}
+
+.banner {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: var(--radius-control);
+  font-size: 14px;
+  border: 1px solid var(--glass-border);
+}
+
+.banner-danger {
+  background: rgba(255, 91, 91, 0.08);
+  color: #ffb3b3;
+  border-color: rgba(255, 91, 91, 0.25);
+}
+
+.banner-success {
+  background: rgba(61, 220, 132, 0.08);
+  color: #a9f0c6;
+  border-color: rgba(61, 220, 132, 0.25);
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.table th {
+  text-align: left;
+  padding: 12px 16px;
+  color: var(--text-tertiary);
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--glass-border);
+}
+
+.table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--glass-border);
+  color: var(--text-primary);
+}
+
+.table tr:last-child td {
+  border-bottom: none;
+}

@@ -19,10 +19,10 @@ const statusLabel: Record<HistoryItem['status'], string> = {
   failed: '실패',
 };
 
-const statusColor: Record<HistoryItem['status'], string> = {
-  processing: '#8a6d00',
-  success: '#1c6b34',
-  failed: '#902020',
+const statusBadgeClass: Record<HistoryItem['status'], string> = {
+  processing: 'badge badge-warning',
+  success: 'badge badge-success',
+  failed: 'badge badge-danger',
 };
 
 export default function HistoryPage() {
@@ -41,45 +41,43 @@ export default function HistoryPage() {
 
   return (
     <div>
-      <h1 style={{ fontSize: 22, marginBottom: 16 }}>생성 이력</h1>
+      <h1 style={{ fontSize: 28, fontWeight: 800, marginBottom: 24, letterSpacing: -0.5 }}>생성 이력</h1>
 
-      {error && <p style={{ color: '#902020' }}>{error}</p>}
-      {!items && !error && <p style={{ color: '#666' }}>불러오는 중...</p>}
-      {items && items.length === 0 && <p style={{ color: '#666' }}>아직 생성한 시나리오가 없습니다.</p>}
+      {error && <p style={{ color: 'var(--danger)' }}>{error}</p>}
+      {!items && !error && <p style={{ color: 'var(--text-secondary)' }}>불러오는 중...</p>}
+      {items && items.length === 0 && <p style={{ color: 'var(--text-secondary)' }}>아직 생성한 시나리오가 없습니다.</p>}
 
       {items && items.length > 0 && (
-        <div style={{ background: '#fff', border: '1px solid #e2e2e5', borderRadius: 10, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+        <div className="glass" style={{ overflow: 'hidden', padding: 0 }}>
+          <table className="table">
             <thead>
-              <tr style={{ background: '#f2f2f4', textAlign: 'left' }}>
-                <th style={cellStyle}>생성 일시</th>
-                <th style={cellStyle}>원본 파일</th>
-                <th style={cellStyle}>상태</th>
-                <th style={cellStyle}>단계 / 스텝</th>
-                <th style={cellStyle}></th>
+              <tr>
+                <th>생성 일시</th>
+                <th>원본 파일</th>
+                <th>상태</th>
+                <th>단계 / 스텝</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {items.map((item) => (
-                <tr key={item.id} style={{ borderTop: '1px solid #eee' }}>
-                  <td style={cellStyle}>{new Date(item.created_at).toLocaleString('ko-KR')}</td>
-                  <td style={cellStyle}>{item.source_filename}</td>
-                  <td style={{ ...cellStyle, color: statusColor[item.status], fontWeight: 600 }}>
-                    {statusLabel[item.status]}
+                <tr key={item.id}>
+                  <td>{new Date(item.created_at).toLocaleString('ko-KR')}</td>
+                  <td>{item.source_filename}</td>
+                  <td>
+                    <span className={statusBadgeClass[item.status]}>{statusLabel[item.status]}</span>
                     {item.status === 'failed' && item.error_message && (
-                      <div style={{ fontWeight: 400, color: '#999', fontSize: 12 }}>{item.error_message}</div>
+                      <div style={{ marginTop: 6, color: 'var(--text-tertiary)', fontSize: 12 }}>{item.error_message}</div>
                     )}
                   </td>
-                  <td style={cellStyle}>
-                    {item.scenario_count != null ? `${item.scenario_count}개 / ${item.step_count}개` : '-'}
-                  </td>
-                  <td style={cellStyle}>
+                  <td>{item.scenario_count != null ? `${item.scenario_count}개 / ${item.step_count}개` : '-'}</td>
+                  <td>
                     {item.status === 'success' ? (
-                      <a href={`/api/download/${item.id}`} style={{ color: '#0b57d0' }}>
+                      <a href={`/api/download/${item.id}`} style={{ color: 'var(--accent)', fontWeight: 600, textDecoration: 'none' }}>
                         다운로드
                       </a>
                     ) : (
-                      '-'
+                      <span style={{ color: 'var(--text-tertiary)' }}>-</span>
                     )}
                   </td>
                 </tr>
@@ -91,5 +89,3 @@ export default function HistoryPage() {
     </div>
   );
 }
-
-const cellStyle: React.CSSProperties = { padding: '10px 14px' };
