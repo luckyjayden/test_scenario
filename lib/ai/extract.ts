@@ -4,7 +4,7 @@ import { EXTRACTION_SCHEMA, EXTRACTION_TOOL_NAME, ExtractionResult } from './sch
 import { EXTRACTION_SYSTEM_PROMPT } from './guideRules';
 
 // Unlike Anthropic, OpenAI's chat models don't read PDFs natively as a
-// vision input, so each page is rasterized to a PNG (via pdfjs-dist, no
+// vision input, so each page is rasterized to a JPEG (via pdfjs-dist, no
 // native canvas dependency) and sent as a separate image in one request —
 // the model sees the same mockup + description-panel layout a human
 // reviewer would, one page = one image.
@@ -30,32 +30,45 @@ export async function extractTestScenarios(pdfBuffer: Buffer): Promise<Extractio
     );
   }
 
-  const pageImages: Buffer[] = [];
+  // jpg + a moderate scale keeps per-page buffers small enough to fit
+  // Vercel's 2GB function memory cap for a full-length 화면설계서 — UI
+  // mockup text stays legible at this quality, and unlike PNG, pdf-to-img
+  // never holds an uncompressed bitmap the same size as the encoded output.
   const document = await pdf(`data:application/pdf;base64,${pdfBuffer.toString('base64')}`, {
-    scale: 2,
+    scale: 1.5,
+    format: 'jpg',
   });
-  for await (const page of document) {
-    pageImages.push(page);
+
+  type ContentPart =
+    | { type: 'text'; text: string }
+    | { type: 'image_url'; image_url: { url: string; detail: 'high' } };
+  const pageContent: ContentPart[] = [];
+  let pageCount = 0;
+  try {
+    for await (const page of document) {
+      pageCount += 1;
+      if (pageCount > MAX_PAGES) {
+        throw new ExtractionError(
+          `페이지 수가 처리 가능한 최대(${MAX_PAGES}페이지)를 초과했습니다. 파일을 분할해서 업로드해주세요.`
+        );
+      }
+      pageContent.push(
+        { type: 'text', text: `--- ${pageCount}페이지 ---` },
+        { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${page.toString('base64')}`, detail: 'high' } }
+      );
+    }
+  } finally {
+    // pdf-to-img keeps the underlying pdfjs document (and its rendering
+    // buffers) alive until explicitly destroyed — without this, that
+    // memory sticks around through the OpenAI call and xlsx build below.
+    await document.destroy();
   }
 
-  if (pageImages.length === 0) {
+  if (pageCount === 0) {
     throw new ExtractionError('PDF에서 페이지를 읽지 못했습니다. 파일이 손상되지 않았는지 확인해주세요.');
-  }
-  if (pageImages.length > MAX_PAGES) {
-    throw new ExtractionError(
-      `페이지 수(${pageImages.length})가 처리 가능한 최대(${MAX_PAGES}페이지)를 초과했습니다. 파일을 분할해서 업로드해주세요.`
-    );
   }
 
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-
-  const pageContent = pageImages.flatMap((page, i) => [
-    { type: 'text' as const, text: `--- ${i + 1}페이지 ---` },
-    {
-      type: 'image_url' as const,
-      image_url: { url: `data:image/png;base64,${page.toString('base64')}`, detail: 'high' as const },
-    },
-  ]);
 
   const completion = await client.chat.completions.create({
     model: MODEL,
