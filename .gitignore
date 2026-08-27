@@ -3,6 +3,7 @@ node_modules/
 .env
 .env.local
 *.log
+tsconfig.tsbuildinfo
 test-output.xlsx
 test-output.pdf
 t_page*.png

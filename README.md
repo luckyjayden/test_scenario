@@ -8,9 +8,9 @@
 
 - `app/page.tsx` — 업로드 화면
 - `app/history/page.tsx` — 생성 이력 화면
-- `app/api/generate/route.ts` — PDF 업로드 → Claude API로 시나리오 추출 → 엑셀 생성 → Supabase 저장 → 파일 응답
+- `app/api/generate/route.ts` — PDF 업로드 → OpenAI API로 시나리오 추출 → 엑셀 생성 → Supabase 저장 → 파일 응답
 - `app/api/history/route.ts`, `app/api/download/[id]/route.ts` — 이력 조회/재다운로드
-- `lib/ai/` — Claude API 호출(`extract.ts`), 추출 규칙 프롬프트(`guideRules.ts`), 구조화 출력 스키마(`schema.ts`)
+- `lib/ai/` — OpenAI API 호출(`extract.ts`, PDF를 페이지별 이미지로 변환해 vision 입력으로 전달), 추출 규칙 프롬프트(`guideRules.ts`), 구조화 출력 스키마(`schema.ts`)
 - `lib/excel/build.ts` — 서식 파일에 맞춰 실제 엑셀을 만드는 핵심 로직 (기존에 Python(openpyxl)으로 수작업 검증한 로직을 ExcelJS로 그대로 이식)
 - `lib/excel/templateData.ts` — 서식 파일(`assets/template.xlsx`)을 base64로 임베드한 것 (Vercel 서버리스 환경에서 런타임에 파일을 읽지 않고 모듈로 번들되도록)
 - `supabase/schema.sql` — DB 테이블 + 스토리지 버킷 정의 (이미 아래 프로젝트에 적용되어 있음)
@@ -31,7 +31,7 @@ cp .env.example .env.local   # 값 채우기 (아래 "환경변수" 참고)
 npm run dev
 ```
 
-엑셀 생성 로직만 따로 검증하고 싶다면 (Claude API 키 없이도 가능):
+엑셀 생성 로직만 따로 검증하고 싶다면 (OpenAI API 키 없이도 가능):
 
 ```bash
 npm run test:excel   # fixture.json(땡겨요 로그인/회원가입 137개 스텝 샘플)로 test-output.xlsx 생성
@@ -41,8 +41,8 @@ npm run test:excel   # fixture.json(땡겨요 로그인/회원가입 137개 스�
 
 | 변수 | 설명 |
 |---|---|
-| `ANTHROPIC_API_KEY` | **직접 발급 필요.** https://console.anthropic.com 에서 발급한 본인 API 키. PDF 분석(추출) 호출에 사용되며, 사용한 만큼 요금이 청구됩니다. |
-| `ANTHROPIC_MODEL` | (선택) 기본값은 PDF 네이티브 지원 모델. 보통 바꿀 필요 없음. |
+| `OPENAI_API_KEY` | **직접 발급 필요.** https://platform.openai.com/api-keys 에서 발급한 본인 API 키. 화면설계서 이미지 분석(추출) 호출에 사용되며, 사용한 만큼 요금이 청구됩니다. |
+| `OPENAI_MODEL` | (선택) 기본값은 vision 지원 GPT-4o 모델. 보통 바꿀 필요 없음. |
 | `SUPABASE_URL` | `https://ranjexfefrfnhmbybffq.supabase.co` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase 대시보드 → 이 프로젝트 → Project Settings → API → `service_role` 키를 복사 (비밀 키이므로 저는 조회할 수 없어 직접 가져오셔야 해요) |
 | `SUPABASE_ANON_KEY` | (service_role 대신 써도 됨) `eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJhbmpleGZlZnJmbmhtYnliZmZxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc3NTIyNTQsImV4cCI6MjEwMzMyODI1NH0.EMOMMCEfKBoTQEyscvg3GQ2axjv_hwcsPWXakfQIe2U` |
@@ -74,7 +74,7 @@ npm run test:excel   # fixture.json(땡겨요 로그인/회원가입 137개 스�
 npm i -g vercel
 vercel login
 vercel        # 폴더 안에서 실행, 질문에 답하면 됨
-vercel env add ANTHROPIC_API_KEY
+vercel env add OPENAI_API_KEY
 vercel env add SUPABASE_URL
 vercel env add SUPABASE_SERVICE_ROLE_KEY
 vercel --prod
@@ -82,13 +82,13 @@ vercel --prod
 
 ### 함수 실행 시간 (중요)
 
-페이지 수가 많은 화면설계서는 Claude API 분석 호출이 수십 초~수 분 걸릴 수 있습니다. Vercel Hobby(무료) 플랜은 서버리스 함수 실행시간 제한이 짧아서 큰 PDF에서 타임아웃이 날 수 있어요. 실제로 여러 번 타임아웃을 겪으신다면:
+페이지 수가 많은 화면설계서는 OpenAI API 분석 호출이 수십 초~수 분 걸릴 수 있습니다. Vercel Hobby(무료) 플랜은 서버리스 함수 실행시간 제한이 짧아서 큰 PDF에서 타임아웃이 날 수 있어요. 실제로 여러 번 타임아웃을 겪으신다면:
 
 - Vercel Pro 플랜으로 올리거나,
 - 프로젝트 설정에서 Fluid Compute를 켜서 `maxDuration`(현재 `app/api/generate/route.ts`에 300초로 설정됨)을 더 길게 활용하시는 걸 권장합니다.
 
 ## 알아두면 좋은 제약
 
-- Claude PDF 분석은 문서당 약 100페이지 / 32MB 제한이 있습니다 (Anthropic API 공식 제한). 이보다 큰 화면설계서는 파일을 나눠서 업로드해야 합니다 — 이 MVP는 자동 분할을 하지 않습니다.
+- PDF는 페이지별로 이미지 변환 후 OpenAI vision 입력으로 전달됩니다. 업로드 용량은 32MB로 제한되며, 페이지 수는 60페이지를 넘으면 거부됩니다(공식 API 제한이 아니라, 한 번의 요청이 모델 컨텍스트/비용을 넘지 않도록 잡아둔 값 — `lib/ai/extract.ts`의 `MAX_PAGES`). 이보다 큰 화면설계서는 파일을 나눠서 업로드해야 합니다 — 이 MVP는 자동 분할을 하지 않습니다.
 - 서식 파일(`assets/template.xlsx`)을 바꾸고 싶다면 그 파일을 교체한 뒤 `node scripts/regen-template-data.mjs`를 실행해서 `lib/excel/templateData.ts`를 다시 생성해주세요.
 - 이 앱은 로그인/권한 분리가 없는 개인용 도구로 설계되었습니다. 여러 사람이 같이 쓰게 되면 이력이 전부 공유되니, 필요하면 인증을 추가해주세요.

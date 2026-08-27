@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   experimental: {
-    serverComponentsExternalPackages: ['exceljs'],
+    serverComponentsExternalPackages: ['exceljs', 'pdf-to-img', 'pdfjs-dist'],
   },
 };
 

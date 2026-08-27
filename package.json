@@ -8,11 +8,15 @@
     "start": "next start",
     "test:excel": "tsx scripts/test-excel-build.ts"
   },
+  "engines": {
+    "node": ">=20.19.0"
+  },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.120.0",
     "@supabase/supabase-js": "^2.45.4",
     "exceljs": "^4.4.0",
     "next": "14.2.35",
+    "openai": "^7.7.0",
+    "pdf-to-img": "^6.3.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },

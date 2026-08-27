@@ -3,9 +3,10 @@ import { extractTestScenarios, ExtractionError } from '@/lib/ai/extract';
 import { buildScenarioWorkbook } from '@/lib/excel/build';
 import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
 
-// Large PDFs + a vision-heavy Claude call can comfortably exceed the
-// platform's default function timeout. This needs Vercel's Fluid Compute /
-// a plan that allows a long maxDuration — see README "배포" section.
+// Large PDFs (rasterized to per-page images) + a vision-heavy OpenAI call
+// can comfortably exceed the platform's default function timeout. This
+// needs Vercel's Fluid Compute / a plan that allows a long maxDuration —
+// see README "배포" section.
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 

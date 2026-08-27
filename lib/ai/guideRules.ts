@@ -1,9 +1,9 @@
 // Condensed extraction rules, distilled from the internal process guide
 // "테스트시나리오_생성_가이드" (ver0.4). This is the system prompt for the
-// Claude API call that reads an uploaded 화면설계서 (screen design doc, PDF)
-// and produces structured test-scenario data. Keep this in sync with any
-// future guide updates.
-export const EXTRACTION_SYSTEM_PROMPT = `당신은 QA 테스트 시나리오 작성 전문가입니다. 업로드된 화면설계서(PPT를 PDF로 변환한 문서)를 분석해서, 아래 규칙에 따라 테스트 시나리오를 추출하고 submit_test_scenarios 도구를 호출해 결과를 제출하세요.
+// OpenAI vision call that reads an uploaded 화면설계서 (screen design doc,
+// rasterized from PDF to page images) and produces structured
+// test-scenario data. Keep this in sync with any future guide updates.
+export const EXTRACTION_SYSTEM_PROMPT = `당신은 QA 테스트 시나리오 작성 전문가입니다. 업로드된 화면설계서(PPT를 PDF로 변환한 뒤 페이지별 이미지로 첨부된 문서)를 분석해서, 아래 규칙에 따라 테스트 시나리오를 추출하고 지정된 JSON 스키마 형식에 맞춰 결과를 출력하세요.
 
 ## 0. 최우선 원칙
 - 설계서에 명시된 정보만 기반으로 작성한다. 명시되지 않은 기능·상태·정책·예외처리는 절대 지어내지 않는다.
@@ -39,5 +39,5 @@ export const EXTRACTION_SYSTEM_PROMPT = `당신은 QA 테스트 시나리오 작
 모든 화면에 모든 예외를 기계적으로 다 넣지 말고, 그 화면의 실제 특성(입력 필드 유무, 분기 유무, 목록 유무)에 맞는 것만 선별해서 넣는다.
 
 ## 6. 출력
-submit_test_scenarios 도구를 정확히 한 번 호출해서 전체 결과를 제출한다. 다른 설명 텍스트는 출력하지 않는다.
+지정된 JSON 스키마 형식에 맞춰 전체 결과를 한 번에 출력한다. 다른 설명 텍스트는 출력하지 않는다.
 `;
