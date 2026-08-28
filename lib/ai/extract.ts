@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import { EXTRACTION_SCHEMA, EXTRACTION_TOOL_NAME, ExtractionResult } from './schema';
 import { EXTRACTION_SYSTEM_PROMPT } from './guideRules';
+import { MAX_PDF_BYTES } from '../files';
 
 // Unlike Anthropic, OpenAI's chat models don't read PDFs natively as a
 // vision input, so each page is rasterized to a JPEG (via pdfjs-dist, no
@@ -8,7 +9,7 @@ import { EXTRACTION_SYSTEM_PROMPT } from './guideRules';
 // the same mockup + description-panel layout a human reviewer would, one
 // page = one image.
 const MODEL = process.env.OPENAI_MODEL || 'gpt-4o';
-export const MAX_PDF_BYTES = 32 * 1024 * 1024;
+export { MAX_PDF_BYTES };
 // A "high" detail vision image on gpt-4o costs roughly 1,000-1,500 tokens
 // depending on page dimensions. Some OpenAI orgs (Tier 1) cap gpt-4o at
 // 30,000 tokens/minute total, and that's a hard per-request ceiling, not a

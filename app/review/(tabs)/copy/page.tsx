@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { supabaseBrowser } from '@/lib/supabaseBrowser';
 import ToneMannerInput from '@/components/ToneMannerInput';
+import { MAX_PDF_BYTES } from '@/lib/files';
 
 const STORAGE_BUCKET = 'test-scenario-files';
 const MAX_IMAGES = 30;
@@ -44,6 +45,16 @@ export default function CopyReviewPage() {
     }
     if (isImageSet && files.length > MAX_IMAGES) {
       setError(`이미지는 최대 ${MAX_IMAGES}장까지 업로드할 수 있어요 (현재 ${files.length}장).`);
+      return;
+    }
+    // Checked before any upload starts — otherwise the user waits through a
+    // full upload (and a server round-trip that re-downloads the file just
+    // to check its size) before finding out it was always going to be
+    // rejected.
+    if (isSinglePdf && files[0].size > MAX_PDF_BYTES) {
+      setError(
+        `PDF 용량(${(files[0].size / 1024 / 1024).toFixed(1)}MB)이 처리 가능한 최대 크기(${MAX_PDF_BYTES / 1024 / 1024}MB)를 초과했습니다. 파일을 분할해서 업로드해주세요.`
+      );
       return;
     }
 
