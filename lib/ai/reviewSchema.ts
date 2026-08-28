@@ -18,34 +18,36 @@ export const COPY_REVIEW_SCHEMA = {
           type: 'object',
           additionalProperties: false,
           properties: {
-            screen: { type: 'string', description: "'[화면ID] 화면명' 형식. 화면ID가 없으면 화면명만." },
+            screen: { type: 'string', description: "반드시 '[페이지번호] 화면명' 형식. 예: '3 로그인'. 다른 표기 금지." },
             component_type: { type: 'string', description: '예: 버튼, 알럿, placeholder, 안내문구, 토스트' },
-            current_text: { type: 'string', description: '현재 문구 원문 (설계서에서 그대로 인용)' },
-            issue: { type: 'string', description: '무엇이 왜 부적절한지 (톤앤매너 불일치, 어색한 표현, 일관성 위반 등)' },
+            current_text: {
+              type: 'string',
+              description: '설계서 화면에 실제로 보이는 문구 원문을 한 글자도 바꾸지 않고 그대로 인용. 확인 불가하면 이 항목 자체를 만들지 않는다.',
+            },
+            issue: { type: 'string', description: '무엇이 왜 부적절한지 (톤앤매너 불일치, 어색한 표현 등 — 일관성 판단은 여기서 하지 않는다)' },
             suggested_text: { type: 'string', description: '대체 문구 제안' },
             severity: { type: 'string', enum: ['high', 'medium', 'low'] },
           },
           required: ['screen', 'component_type', 'current_text', 'issue', 'suggested_text', 'severity'],
         },
       },
-      consistency_notes: {
+      component_instances: {
         type: 'array',
         description:
-          '동일 컴포넌트 유형의 문구 패턴이 이 배치에 포함된 화면들 사이에서 일관되는지 관찰한 내용. 패턴이 나타나지 않으면 빈 배열.',
+          '이 배치에서 관찰된, 화면 간 비교가 의미 있는 반복 컴포넌트(버튼/알럿/토스트/placeholder 등)의 문구 인스턴스 전부. 이슈 여부와 무관하게 전부 기록한다 — 화면 전체를 다시 살펴본 뒤 일관성만 재판단하는 다음 단계에서 사용되므로, findings에 없는 정상 항목도 반드시 포함한다. 한 화면에 1개만 등장하는 고유 텍스트(본문 설명 등)는 제외.',
         items: {
           type: 'object',
           additionalProperties: false,
           properties: {
+            screen: { type: 'string', description: "반드시 '[페이지번호] 화면명' 형식." },
             component_type: { type: 'string' },
-            pattern: { type: 'string', description: '관찰된 공통 패턴 (예: 버튼은 항상 2어절 명령형)' },
-            consistent: { type: 'boolean' },
-            note: { type: 'string' },
+            text: { type: 'string', description: '설계서에 실제로 보이는 문구 원문 그대로.' },
           },
-          required: ['component_type', 'pattern', 'consistent', 'note'],
+          required: ['screen', 'component_type', 'text'],
         },
       },
     },
-    required: ['findings', 'consistency_notes'],
+    required: ['findings', 'component_instances'],
   },
 } as const;
 
@@ -58,6 +60,17 @@ export type CopyFinding = {
   severity: 'high' | 'medium' | 'low';
 };
 
+export type ComponentInstance = {
+  screen: string;
+  component_type: string;
+  text: string;
+};
+
+export type CopyReviewBatchResult = {
+  findings: CopyFinding[];
+  component_instances: ComponentInstance[];
+};
+
 export type ConsistencyNote = {
   component_type: string;
   pattern: string;
@@ -65,10 +78,37 @@ export type ConsistencyNote = {
   note: string;
 };
 
-export type CopyReviewBatchResult = {
-  findings: CopyFinding[];
-  consistency_notes: ConsistencyNote[];
-};
+// Phase 2: a single text-only call sees every component_instance collected
+// across every batch at once, so it produces one coherent judgment instead
+// of N independently-generated (and sometimes contradictory) per-batch ones.
+export const CONSISTENCY_SYNTHESIS_TOOL_NAME = 'submit_consistency_synthesis';
+
+export const CONSISTENCY_SYNTHESIS_SCHEMA = {
+  name: CONSISTENCY_SYNTHESIS_TOOL_NAME,
+  description: '문서 전체에서 수집된 컴포넌트 문구 인스턴스를 비교해 화면 간 일관성을 판단한 결과를 제출한다.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      consistency_notes: {
+        type: 'array',
+        description: '2회 이상 등장한 컴포넌트 유형에 대해서만 작성. 1회만 등장한 유형은 판단할 수 없으므로 제외.',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            component_type: { type: 'string' },
+            pattern: { type: 'string', description: '관찰된 공통 패턴 (예: 확인 버튼은 항상 2어절 명령형)' },
+            consistent: { type: 'boolean' },
+            note: { type: 'string', description: '불일치하면 어느 화면이 어떻게 다른지 구체적으로 명시.' },
+          },
+          required: ['component_type', 'pattern', 'consistent', 'note'],
+        },
+      },
+    },
+    required: ['consistency_notes'],
+  },
+} as const;
 
 // Separate, minimal schema for the one-off tone-detection call (only used
 // when the user leaves tone/manner blank) — kept as its own strict schema

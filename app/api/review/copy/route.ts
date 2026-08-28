@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pdf } from 'pdf-to-img';
 import { ExtractionError, PageImage, BATCH_SIZE, MAX_PDF_BYTES, MAX_IMAGES } from '@/lib/ai/extract';
-import { detectTone, reviewCopyBatch, mergeConsistencyNotes } from '@/lib/ai/reviewCopy';
-import { CopyFinding, ConsistencyNote } from '@/lib/ai/reviewSchema';
+import { detectTone, reviewCopyBatch, synthesizeConsistency } from '@/lib/ai/reviewCopy';
+import { CopyFinding, ComponentInstance } from '@/lib/ai/reviewSchema';
 import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
 import { mimeForExt } from '@/lib/files';
 
@@ -12,8 +12,8 @@ import { mimeForExt } from '@/lib/files';
 export const runtime = 'nodejs';
 export const maxDuration = 300;
 
-type StoredPartial = { findings: CopyFinding[]; consistency_notes: ConsistencyNote[] };
-const EMPTY_PARTIAL: StoredPartial = { findings: [], consistency_notes: [] };
+type StoredPartial = { findings: CopyFinding[]; component_instances: ComponentInstance[] };
+const EMPTY_PARTIAL: StoredPartial = { findings: [], component_instances: [] };
 
 export async function POST(req: NextRequest) {
   const { runId, toneManner } = await req.json().catch(() => ({}));
@@ -134,7 +134,7 @@ export async function POST(req: NextRequest) {
 
     const mergedPartial: StoredPartial = {
       findings: [...partial.findings, ...batchResult.findings],
-      consistency_notes: [...partial.consistency_notes, ...batchResult.consistency_notes],
+      component_instances: [...partial.component_instances, ...batchResult.component_instances],
     };
 
     const nextBatchIndex = batchIndex + 1;
@@ -146,8 +146,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ done: false, progress: { current: nextBatchIndex, total: totalBatches } });
     }
 
-    // Last batch — finalize.
-    const finalConsistency = mergeConsistencyNotes(mergedPartial.consistency_notes);
+    // Last batch — finalize. Consistency is judged exactly once, in a single
+    // text-only call over every component_instance collected across every
+    // batch (see synthesizeConsistency) — not per-batch, so there is no way
+    // for it to contradict itself the way independently-generated per-batch
+    // verdicts could.
+    const finalConsistency = await synthesizeConsistency(mergedPartial.component_instances);
     const resultJson = {
       tone_manner: toneMannerFinal,
       findings: mergedPartial.findings,
