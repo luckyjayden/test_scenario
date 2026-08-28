@@ -32,6 +32,16 @@ type ContentPart =
 
 export type PageImage = { buffer: Buffer; mime: string };
 
+// Abstracts "get me pages [start, start+count)" so runExtraction can pull one
+// batch at a time instead of requiring every page pre-loaded into memory —
+// the PDF path (below) renders each batch on demand and lets it be
+// garbage-collected once sent, instead of holding the whole document's
+// rasterized pages (which OOM'd the function on a 79-page/30MB deck).
+type PageSource = {
+  total: number;
+  getBatch: (start: number, count: number) => Promise<PageImage[]>;
+};
+
 export async function extractTestScenarios(
   pdfBuffer: Buffer,
   onProgress?: (current: number, total: number) => void | Promise<void>
@@ -47,40 +57,47 @@ export async function extractTestScenarios(
     );
   }
 
-  // jpg + a moderate scale keeps per-page buffers small enough to fit
-  // Vercel's 2GB function memory cap for a full-length 화면설계서 — UI
-  // mockup text stays legible at this quality, and unlike PNG, pdf-to-img
-  // never holds an uncompressed bitmap the same size as the encoded output.
+  // jpg + a moderate scale keeps per-page buffers small enough to fit within
+  // Vercel Hobby's 2GB function memory cap — UI mockup text stays legible at
+  // this quality, and unlike PNG, pdf-to-img never holds an uncompressed
+  // bitmap the same size as the encoded output.
   const document = await pdf(`data:application/pdf;base64,${pdfBuffer.toString('base64')}`, {
     scale: 1.5,
     format: 'jpg',
   });
 
-  const pages: Buffer[] = [];
   try {
-    for await (const page of document) {
-      pages.push(page);
-      if (pages.length > MAX_PAGES) {
-        throw new ExtractionError(
-          `페이지 수가 처리 가능한 최대(${MAX_PAGES}페이지)를 초과했습니다. 파일을 분할해서 업로드해주세요.`
-        );
-      }
+    // document.length comes from the PDF's page tree, not from rendering —
+    // this rejects an oversized deck instantly instead of burning memory (and
+    // OpenAI batches) rasterizing 60 pages before finding out.
+    if (document.length === 0) {
+      throw new ExtractionError('PDF에서 페이지를 읽지 못했습니다. 파일이 손상되지 않았는지 확인해주세요.');
     }
+    if (document.length > MAX_PAGES) {
+      throw new ExtractionError(
+        `페이지 수(${document.length}페이지)가 처리 가능한 최대(${MAX_PAGES}페이지)를 초과했습니다. 파일을 분할해서 업로드해주세요.`
+      );
+    }
+
+    const source: PageSource = {
+      total: document.length,
+      getBatch: async (start, count) => {
+        const buffers: PageImage[] = [];
+        for (let i = 0; i < count; i++) {
+          // getPage is 1-indexed.
+          buffers.push({ buffer: await document.getPage(start + i + 1), mime: 'image/jpeg' });
+        }
+        return buffers;
+      },
+    };
+
+    return await runExtraction(source, onProgress);
   } finally {
     // pdf-to-img keeps the underlying pdfjs document (and its rendering
-    // buffers) alive until explicitly destroyed — without this, that
-    // memory sticks around for the rest of the request.
+    // buffers) alive until explicitly destroyed — without this, that memory
+    // sticks around for the rest of the request.
     await document.destroy();
   }
-
-  if (pages.length === 0) {
-    throw new ExtractionError('PDF에서 페이지를 읽지 못했습니다. 파일이 손상되지 않았는지 확인해주세요.');
-  }
-
-  return extractFromImages(
-    pages.map((buffer) => ({ buffer, mime: 'image/jpeg' })),
-    onProgress
-  );
 }
 
 // Images (JPG/PNG/WEBP) skip PDF rasterization and go straight to the model
@@ -99,11 +116,14 @@ export async function extractFromImages(
     );
   }
 
-  return runExtraction(images, onProgress);
+  return runExtraction(
+    { total: images.length, getBatch: async (start, count) => images.slice(start, start + count) },
+    onProgress
+  );
 }
 
 async function runExtraction(
-  pages: PageImage[],
+  source: PageSource,
   onProgress?: (current: number, total: number) => void | Promise<void>
 ): Promise<ExtractionResult> {
   if (!process.env.OPENAI_API_KEY) {
@@ -112,10 +132,7 @@ async function runExtraction(
     );
   }
 
-  const batches: PageImage[][] = [];
-  for (let i = 0; i < pages.length; i += BATCH_SIZE) {
-    batches.push(pages.slice(i, i + BATCH_SIZE));
-  }
+  const totalBatches = Math.max(1, Math.ceil(source.total / BATCH_SIZE));
 
   // maxRetries covers ordinary transient 429s (a request that's briefly
   // over budget because of other concurrent usage) — not the "this single
@@ -126,10 +143,15 @@ async function runExtraction(
   let serviceName = '';
   let screenScopeName = '';
 
-  for (let b = 0; b < batches.length; b++) {
-    const batch = batches[b];
+  for (let b = 0; b < totalBatches; b++) {
     const startPage = b * BATCH_SIZE + 1;
-    const endPage = startPage + batch.length - 1;
+    const count = Math.min(BATCH_SIZE, source.total - b * BATCH_SIZE);
+    const endPage = startPage + count - 1;
+    // Rendered/fetched just-in-time per batch, not for the whole document up
+    // front — `batch` falls out of scope (and is GC-eligible) once this loop
+    // iteration finishes, so peak memory is bounded by one batch, not by how
+    // many pages the source document has.
+    const batch = await source.getBatch(b * BATCH_SIZE, count);
 
     const pageContent: ContentPart[] = batch.flatMap((page, i) => [
       { type: 'text', text: `--- ${startPage + i}페이지 ---` },
@@ -140,8 +162,8 @@ async function runExtraction(
     ]);
 
     const instructionText =
-      batches.length > 1
-        ? `이 화면설계서는 전체 ${pages.length}페이지이며, 이번 요청에는 그중 ${startPage}~${endPage}페이지(총 ${batches.length}개 배치 중 ${b + 1}번째)만 첨부되어 있어. ` +
+      totalBatches > 1
+        ? `이 화면설계서는 전체 ${source.total}페이지이며, 이번 요청에는 그중 ${startPage}~${endPage}페이지(총 ${totalBatches}개 배치 중 ${b + 1}번째)만 첨부되어 있어. ` +
           '이 배치에 포함된 페이지만 분석해서 시나리오 단계를 추출해줘. 시나리오 단계 번호(순번)는 이 배치 안에서 1부터 새로 매겨도 돼 — 다른 배치와 합친 뒤 전체 기준으로 다시 번호를 매길 거야.'
         : '이 화면설계서 전체를 분석해서 테스트 시나리오를 추출해줘. 아래 이미지는 문서의 페이지 순서대로 첨부되어 있어.';
 
@@ -166,7 +188,7 @@ async function runExtraction(
     } catch (err) {
       if (err instanceof OpenAI.RateLimitError) {
         throw new ExtractionError(
-          `OpenAI 계정의 분당 토큰 사용량 한도를 초과했습니다 (배치 ${b + 1}/${batches.length} 처리 중). 잠시 후 다시 시도해주세요. ` +
+          `OpenAI 계정의 분당 토큰 사용량 한도를 초과했습니다 (배치 ${b + 1}/${totalBatches} 처리 중). 잠시 후 다시 시도해주세요. ` +
             '반복된다면 OpenAI 대시보드(platform.openai.com/settings/organization/limits)에서 사용량 한도를 확인해주세요.'
         );
       }
@@ -175,21 +197,21 @@ async function runExtraction(
 
     const raw = completion.choices[0]?.message?.content;
     if (!raw) {
-      throw new ExtractionError(`모델이 응답을 반환하지 않았습니다 (배치 ${b + 1}/${batches.length}). 다시 시도해주세요.`);
+      throw new ExtractionError(`모델이 응답을 반환하지 않았습니다 (배치 ${b + 1}/${totalBatches}). 다시 시도해주세요.`);
     }
 
     let batchResult: ExtractionResult;
     try {
       batchResult = JSON.parse(raw) as ExtractionResult;
     } catch {
-      throw new ExtractionError(`모델 응답을 JSON으로 파싱하지 못했습니다 (배치 ${b + 1}/${batches.length}). 다시 시도해주세요.`);
+      throw new ExtractionError(`모델 응답을 JSON으로 파싱하지 못했습니다 (배치 ${b + 1}/${totalBatches}). 다시 시도해주세요.`);
     }
 
     if (!serviceName && batchResult.service_name) serviceName = batchResult.service_name;
     if (!screenScopeName && batchResult.screen_scope_name) screenScopeName = batchResult.screen_scope_name;
     allStages.push(...(batchResult.stages || []));
 
-    await onProgress?.(b + 1, batches.length);
+    await onProgress?.(b + 1, totalBatches);
   }
 
   if (allStages.length === 0) {
