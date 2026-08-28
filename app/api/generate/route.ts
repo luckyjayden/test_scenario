@@ -3,19 +3,7 @@ import { pdf } from 'pdf-to-img';
 import { extractBatch, finalizeStages, ExtractionError, PageImage, BatchExtraction, BATCH_SIZE, MAX_PDF_BYTES, MAX_IMAGES } from '@/lib/ai/extract';
 import { buildScenarioWorkbook } from '@/lib/excel/build';
 import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
-
-function mimeForExt(ext: string): string {
-  switch (ext) {
-    case 'png':
-      return 'image/png';
-    case 'webp':
-      return 'image/webp';
-    case 'jpg':
-    case 'jpeg':
-    default:
-      return 'image/jpeg';
-  }
-}
+import { mimeForExt } from '@/lib/files';
 
 // Each request processes exactly one OpenAI batch (see lib/ai/extract.ts) and
 // returns — a document of any page count just takes more sequential requests

@@ -20,6 +20,9 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Link href="/" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
               생성
             </Link>
+            <Link href="/review" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
+              검수하기
+            </Link>
             <Link href="/history" style={{ color: 'var(--text-secondary)', textDecoration: 'none', fontSize: 14, fontWeight: 500 }}>
               이력
             </Link>

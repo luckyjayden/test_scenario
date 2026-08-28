@@ -56,3 +56,49 @@ create policy "service role full access"
   on storage.objects for all
   using (bucket_id = 'test-scenario-files')
   with check (bucket_id = 'test-scenario-files');
+
+-- 검수하기(Review) 기능 — 문구/디자인 검수 이력. Kept separate from
+-- `generations` (different lifecycle/columns) rather than overloading that
+-- table. Review uploads reuse the same `test-scenario-files` bucket under a
+-- `review/<id>/...` key prefix, so no new bucket/storage policy is needed —
+-- the policy above already grants full access to the whole bucket.
+create table if not exists public.review_runs (
+  id uuid primary key default gen_random_uuid(),
+  created_at timestamptz not null default now(),
+
+  source_type text not null default 'upload', -- 'upload' | 'figma'
+  source_filename text,
+  figma_file_key text,
+  figma_node_id text,
+
+  tone_manner_input text,
+  tone_manner_detected text,
+
+  status text not null default 'processing', -- processing | success | failed
+  error_message text,
+
+  finding_count integer,
+  layout_issue_count integer,
+
+  result_json jsonb,
+  source_file_path text,
+
+  -- Resumable per-batch processing — same pattern as
+  -- generations.progress_current/extraction_partial (see above), adopted
+  -- from the start here to avoid the OOM/timeout issues that pattern was
+  -- built to fix.
+  progress_current integer,
+  progress_total integer,
+  review_partial jsonb,
+
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists review_runs_created_at_idx on public.review_runs (created_at desc);
+
+alter table public.review_runs enable row level security;
+
+create policy "allow all to anon" on public.review_runs
+  for all
+  using (true)
+  with check (true);
