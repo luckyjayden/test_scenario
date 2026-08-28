@@ -55,32 +55,43 @@ export async function detectTone(pages: PageImage[]): Promise<string> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 5 });
   const pageContent = toPageContent(pages, 1);
 
-  const completion = await client.chat.completions.create({
-    model: MODEL,
-    temperature: TEMPERATURE,
-    max_completion_tokens: 500,
-    messages: [
-      { role: 'system', content: TONE_DETECT_SYSTEM_PROMPT },
-      {
-        role: 'user',
-        content: [
-          { type: 'text', text: '아래 이미지들의 문구를 보고 톤앤매너를 요약해줘.' },
-          ...pageContent,
-        ],
+  let completion;
+  try {
+    completion = await client.chat.completions.create({
+      model: MODEL,
+      temperature: TEMPERATURE,
+      max_completion_tokens: 500,
+      messages: [
+        { role: 'system', content: TONE_DETECT_SYSTEM_PROMPT },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: '아래 이미지들의 문구를 보고 톤앤매너를 요약해줘.' },
+            ...pageContent,
+          ],
+        },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: TONE_DETECT_SCHEMA.name, strict: true, schema: TONE_DETECT_SCHEMA.input_schema },
       },
-    ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: { name: TONE_DETECT_SCHEMA.name, strict: true, schema: TONE_DETECT_SCHEMA.input_schema },
-    },
-  });
+    });
+  } catch (err) {
+    if (err instanceof OpenAI.RateLimitError) {
+      throw new ExtractionError(`OpenAI 요청 한도(또는 크레딧 부족)로 톤앤매너 자동 감지에 실패했습니다: ${err.message}`);
+    }
+    throw err;
+  }
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) throw new ExtractionError('톤앤매너 자동 감지에 실패했습니다 (모델 응답 없음). 톤앤매너를 직접 입력해주세요.');
 
   try {
-    const parsed = JSON.parse(raw) as { tone_manner: string };
-    return parsed.tone_manner || '';
+    const parsed = JSON.parse(raw) as { has_real_screen: boolean; tone_manner: string };
+    // Gate in code, not prompt compliance — discard tone_manner outright
+    // when the model itself classified this batch as having no real screen,
+    // regardless of what string it also produced (see the schema comment).
+    return parsed.has_real_screen ? parsed.tone_manner || '' : '';
   } catch {
     throw new ExtractionError('톤앤매너 자동 감지 응답을 해석하지 못했습니다. 톤앤매너를 직접 입력해주세요.');
   }
@@ -101,19 +112,27 @@ export async function detectServiceName(pages: PageImage[]): Promise<string> {
   const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 5 });
   const pageContent = toPageContent(pages, 1);
 
-  const completion = await client.chat.completions.create({
-    model: MODEL,
-    temperature: TEMPERATURE,
-    max_completion_tokens: 200,
-    messages: [
-      { role: 'system', content: SERVICE_NAME_DETECT_SYSTEM_PROMPT },
-      { role: 'user', content: [{ type: 'text', text: '아래 이미지들에서 서비스/앱 이름을 찾아줘.' }, ...pageContent] },
-    ],
-    response_format: {
-      type: 'json_schema',
-      json_schema: { name: SERVICE_NAME_DETECT_SCHEMA.name, strict: true, schema: SERVICE_NAME_DETECT_SCHEMA.input_schema },
-    },
-  });
+  // Best-effort: service name isn't required for the review to proceed
+  // (unlike tone), so any failure here — including rate limits — just falls
+  // back to an empty string rather than failing the whole batch.
+  let completion;
+  try {
+    completion = await client.chat.completions.create({
+      model: MODEL,
+      temperature: TEMPERATURE,
+      max_completion_tokens: 200,
+      messages: [
+        { role: 'system', content: SERVICE_NAME_DETECT_SYSTEM_PROMPT },
+        { role: 'user', content: [{ type: 'text', text: '아래 이미지들에서 서비스/앱 이름을 찾아줘.' }, ...pageContent] },
+      ],
+      response_format: {
+        type: 'json_schema',
+        json_schema: { name: SERVICE_NAME_DETECT_SCHEMA.name, strict: true, schema: SERVICE_NAME_DETECT_SCHEMA.input_schema },
+      },
+    });
+  } catch {
+    return '';
+  }
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) return '';

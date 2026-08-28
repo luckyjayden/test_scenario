@@ -122,13 +122,28 @@ export const TONE_DETECT_SCHEMA = {
     type: 'object',
     additionalProperties: false,
     properties: {
+      // Forcing this as its own required field — checked in code, not left
+      // to the model to self-censor tone_manner — is what actually works:
+      // asking the model to "just leave tone_manner blank if these aren't
+      // real screens" was NOT reliable in practice. A policy/spec page that
+      // happens to quote real-looking alert text (e.g. an "Alert 문구" spec
+      // table) kept getting used as tone evidence anyway even after several
+      // rounds of stronger prompt wording — the model treated quoted text as
+      // good enough regardless of the instruction. Making the classification
+      // itself a required schema field, then discarding tone_manner in code
+      // whenever this is false, doesn't depend on the model choosing to obey.
+      has_real_screen: {
+        type: 'boolean',
+        description:
+          "첨부된 페이지 중 상단에 'SCREEN'/'SCREEN ID'/'UI TYPE' 헤더가 있는 실제 화면이 하나라도 있으면 true. 헤더 없이 텍스트/표로만 된 참고용 페이지(정책 설명, 체크리스트, Alert 문구 스펙표 포함)뿐이면 false.",
+      },
       tone_manner: {
         type: 'string',
         description:
-          "관찰된 톤앤매너를 한두 문장으로 요약 (예: '짧고 발랄한 반말체, 이모지 사용 없음, 오류 상황은 존댓말 유지').",
+          "has_real_screen이 true일 때만 그 실제 화면들의 문구를 근거로 톤앤매너를 한두 문장으로 요약 (예: '짧고 발랄한 반말체, 이모지 사용 없음, 오류 상황은 존댓말 유지'). has_real_screen이 false이면 빈 문자열.",
       },
     },
-    required: ['tone_manner'],
+    required: ['has_real_screen', 'tone_manner'],
   },
 } as const;
 

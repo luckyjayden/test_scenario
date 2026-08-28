@@ -11,7 +11,7 @@ export async function GET(_req: NextRequest, { params }: { params: { runId: stri
   const { data: row, error } = await supabase
     .from('review_runs')
     .select(
-      'id, created_at, source_type, source_filename, figma_file_key, tone_manner_input, tone_manner_detected, status, error_message, finding_count, layout_issue_count, result_json, progress_current, progress_total'
+      'id, created_at, source_type, source_filename, figma_file_key, tone_manner_input, tone_manner_detected, service_name_detected, status, error_message, finding_count, layout_issue_count, result_json, progress_current, progress_total'
     )
     .eq('id', params.runId)
     .single();

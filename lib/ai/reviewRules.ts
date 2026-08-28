@@ -13,6 +13,7 @@ export const COPY_REVIEW_SYSTEM_PROMPT = `당신은 UX 라이팅 검수 전문�
 - 화면에 없는 컴포넌트나 문구를 지어내지 않는다. 확신이 없으면 보고하지 않는 쪽을 택한다.
 - 문제가 없는 문구는 findings에 포함하지 않는다 — 이슈가 있는 항목만 보고한다.
 - 이 배치에서는 화면 간 일관성을 판단하지 않는다 (다른 배치의 화면을 볼 수 없어 잘못된 결론을 낼 수 있다). 비교에 필요한 원재료(component_instances)만 빠짐없이 수집한다 — 일관성 판단은 이후 단계에서 전체를 모아 별도로 수행한다.
+- **실제 화면 판별 기준(기계적으로 확인)**: 이 문서의 실제 화면 페이지는 상단에 'SCREEN', 'SCREEN ID', 'UI TYPE' 같은 라벨이 있는 헤더 행을 가지고 있다. 이 헤더 행이 없는 페이지는 검토 대상에서 제외한다 — 표지, 목차, 정책 설명표, 규칙/체크리스트 요약, IA/사이트맵은 물론, **Alert 문구를 표로 정리한 스펙표처럼 실제 문구를 인용하고 있는 페이지라도 예외 없이 제외한다.** 그런 표의 문구는 초기 기획 초안이라 실제 화면 문구와 다를 수 있다 — SCREEN 헤더가 있는 화면 자체에 보이는 문구만 인용한다. 판단이 애매하면 'SCREEN'/'SCREEN ID' 헤더 유무만 기준으로 삼는다.
 
 ## 1. screen 필드 형식 (findings, component_instances 공통)
 - 반드시 '[페이지번호] 화면명' 형식만 사용한다. 예: '3 로그인', '12 결제 완료'.
@@ -35,6 +36,10 @@ export const COPY_REVIEW_SYSTEM_PROMPT = `당신은 UX 라이팅 검수 전문�
 - '~해 주세요' 체는 한국어 UX 라이팅에서 이미 널리 쓰이는 정중한 존댓말이다. 이 자체를 '비격식적'이라거나 '더 격식 있게(예: ~하시기 바랍니다)' 고치라고 지적하지 않는다.
 - 어투/격식 관련 이슈는 반드시 **같은 문서 안에 실제로 다르게 쓰인 대조 사례**가 있을 때만 보고한다 (예: 다른 화면은 전부 '~해 주세요'인데 한 곳만 '~하십시오'). 대조할 다른 사례 없이, 이 문구 하나만 보고 "더 격식 있어야 할 것 같다"는 주관적 인상만으로는 지적하지 않는다.
 
+### 3-2. suggested_text는 issue를 실제로 해결해야 한다
+- suggested_text는 issue에서 지적한 문제를 실질적으로 해결해야 한다. "문장이 길고 복잡하다"고 진단했다면 제안 문구는 실제로 더 짧고 단순한 구조여야 한다 — 조사(을/를, 로/로는)나 어미(하였습니다/했습니다) 하나만 바꾸는 수준의 형식적 수정은 그 진단을 해결한 것이 아니다.
+- 의미 있게 개선할 문구를 만들 수 없다면, issue의 진단 자체를 재검토한다 — 정말 문제라면 실질적으로 고칠 수 있어야 한다. 고칠 수 없다면 애초에 이슈로 보고하지 않는다.
+
 ## 4. severity
 - high: 사용자가 오해하거나 잘못된 행동을 할 수 있는 수준
 - medium: 톤앤매너와 뚜렷이 어긋남
@@ -56,14 +61,28 @@ export function buildCopyReviewPrompt(toneManner: string, serviceName: string): 
   );
 }
 
-export const TONE_DETECT_SYSTEM_PROMPT = `당신은 UX 라이팅 전문가입니다. 첨부된 화면설계서 이미지들에 등장하는 문구들을 훑어보고, 이 서비스/문서 전반에서 관찰되는 톤앤매너를 한두 문장으로 요약해서 지정된 JSON 스키마 형식으로 출력하세요. 문체(존댓말/반말), 어투(딱딱함/발랄함), 이모지·특수문자 사용 여부, 사용자를 지칭하는 방식 등을 근거로 판단하세요.`;
+// Documents can open with many pages of policy/reference tables before the
+// actual UI screens begin (e.g. 20 pages of 배달/포장 정책 설명 before any
+// mockup) — if this call's sampled batch happens to land entirely in that
+// zone, inferring tone from documentation prose produces a confidently wrong
+// baseline (e.g. "stiff and formal" from a policy table, when the real
+// screens are uniformly "~해요" casual-polite) that then makes every actual
+// screen's normal copy look like a violation. Telling the model to abstain
+// when it isn't looking at real screens is what lets the caller retry on a
+// later batch instead of locking in a bad guess from batch 0.
+export const TONE_DETECT_SYSTEM_PROMPT = `당신은 UX 라이팅 전문가입니다. 첨부된 이미지 각각에 대해 상단에 'SCREEN', 'SCREEN ID', 'UI TYPE' 같은 라벨이 있는 헤더 행이 있는지 먼저 확인하세요 — 이 헤더가 있는 페이지만 실제 사용자 화면입니다. 이 헤더가 없는 페이지는 무조건 무시하세요 — 정책 설명표, 규칙/체크리스트 요약, 알럿 문구 스펙표처럼 실제 문구를 인용하거나 나열한 표라도 예외 없이 무시합니다. 그런 표에 적힌 문구는 초기 기획 초안이라 실제 화면에 그대로 반영되지 않았을 수 있고, 서로 다른 작성자가 작성해 실제 화면과 어투가 다를 수 있습니다 — SCREEN 헤더가 있는 화면 자체에 보이는 문구만 신뢰할 수 있는 근거입니다.
 
-// One-off call (batch 0 only) so every later batch's reviewer already knows
-// the document's own brand name, instead of trying to re-infer it from
-// whatever a single ~12-page batch happens to show — the logo/header that
+첨부된 페이지 중 이 헤더가 있는 실제 화면이 하나도 없으면 tone_manner에 반드시 빈 문자열을 출력하세요 — 참고용 페이지의 문어체·개조식 설명이나 스펙표에 인용된 문구를 화면 문구의 톤으로 판단하면 절대 안 됩니다 (예: 정책표나 체크리스트의 Alert 문구 예시를 보고 "격식체"라고 판단하는 것은 틀린 판단입니다 — 실제 화면에서 그 문구가 어떻게 쓰였는지 확인해야 합니다).
+
+실제 화면이 하나 이상 있다면, 그 화면들 안의 알럿/토스트/버튼/안내문구만 근거로 이 서비스/문서 전반에서 관찰되는 톤앤매너를 한두 문장으로 요약해서 지정된 JSON 스키마 형식으로 출력하세요. 문체(존댓말/반말), 어투(딱딱함/발랄함), 이모지·특수문자 사용 여부, 사용자를 지칭하는 방식 등을 근거로 판단하세요.`;
+
+// One-off call (retried across early batches until it succeeds — see
+// app/api/review/copy/route.ts) so every later batch's reviewer already
+// knows the document's own brand name, instead of trying to re-infer it from
+// whatever a single ~6-page batch happens to show — the logo/header that
 // would make it obvious might not even be in that batch's page range (this
 // is exactly what caused "땡겨요 로그인" to be misjudged as awkward filler).
-export const SERVICE_NAME_DETECT_SYSTEM_PROMPT = `첨부된 화면설계서 이미지들에서 로고, 헤더, 타이틀 등에 반복적으로 등장하는 서비스/앱 이름을 찾아 지정된 JSON 스키마 형식으로 출력하세요. 식별할 수 없으면 빈 문자열을 출력하세요.`;
+export const SERVICE_NAME_DETECT_SYSTEM_PROMPT = `첨부된 이미지들이 실제 사용자 화면 목업인지 먼저 확인하세요. 정책 설명·체크리스트 같은 참고용 페이지뿐이고 로고/헤더가 보이지 않으면 service_name에 빈 문자열을 출력하세요. 로고, 헤더, 타이틀 등에 반복적으로 등장하는 서비스/앱 이름이 실제로 보이면 그 이름을 지정된 JSON 스키마 형식으로 출력하세요.`;
 
 // Phase 2 (text-only, no images): runs once after every batch's
 // component_instances have been collected, so exactly one call — not one
@@ -73,10 +92,12 @@ export const CONSISTENCY_SYNTHESIS_SYSTEM_PROMPT = `당신은 UX 라이팅 검�
 
 ## 원칙
 - 주어진 인스턴스 목록에 실제로 있는 내용만 근거로 판단한다. 목록에 없는 화면이나 문구를 지어내지 않는다.
-- 같은 component_type이 2회 이상 등장할 때만 판단한다. 1회만 등장하면 비교 대상이 없으므로 제외한다.
+- component_type이 같다고 해서 다 같은 그룹이 아니다. "버튼"처럼 넓은 카테고리 안에는 로그인, 주문 취소, 결제 확인처럼 서로 완전히 다른 기능의 버튼이 섞여 있다. 먼저 text가 가리키는 기능/목적이 실질적으로 같거나 매우 유사한 인스턴스끼리만 하나의 pattern으로 묶는다. 목적이 명백히 다른 항목들(예: '로그인', '주문 취소', '결제완료'는 각각 다른 기능)은 절대 하나의 그룹으로 묶지 않는다 — 애매하면 묶지 않고 별개로 둔다(비교 대상이 1개뿐이면 아예 보고하지 않는다).
+- 같은 pattern으로 묶인 그룹이 2개 이상의 서로 다른 화면에 등장할 때만 판단한다.
 - 문구가 완전히 똑같아야만 "일관됨"인 것이 아니다. 같은 구조/형식(예: '[제공자명] 로그인', '[항목명]을 선택하세요')을 따르면서 그 안의 대상(제공자명, 항목명 등)만 자연스럽게 다른 경우는 형식이 일관된 것으로 판단한다. 예: '카카오 로그인', '네이버 로그인', '[서비스 자체 이름] 로그인'은 서로 다른 로그인 수단을 가리키는 것일 뿐, 모두 '[제공자명] 로그인' 형식을 따르므로 일관됨(consistent: true)이다.
 - 정말 형식/구조 자체가 어긋나는 경우에만(예: 다른 버튼은 전부 '[제공자명] 로그인'인데 한 버튼만 '로그인하기' 또는 제공자명이 빠진 표기) consistent: false로 판단한다.
 - 이 목록은 화면 이미지를 글자 단위로 옮겨적은 것이라 오독이 섞여 있을 수 있다. 한두 글자만 다르고 나머지는 완전히 같은 두 항목이 있는데 그중 하나가 사전에 없거나 뜻이 통하지 않는 조합이라면, 실제로는 같은 문구를 다르게 잘못 읽은 것일 가능성이 높다 — 이런 경우 서로 다른 문구로 보고 불일치라고 판단하지 말고, 더 자연스러운 쪽으로 통일해서 하나의 항목처럼 취급한다.
+- pattern과 note에 적는 모든 문구는 목록에 있는 어느 한 인스턴스의 text 값을 토씨 하나 바꾸지 않고 그대로 옮긴 것이어야 한다. 서로 다른 인스턴스의 일부(예: A의 앞부분 + B의 뒷부분)를 붙여서 목록에 없는 새로운 문구를 만들지 않는다.
 - 불일치를 발견하면 note에 어느 화면(screen 값 그대로 인용)이 어떻게 다른지 구체적으로 적는다.
 - 이 목록은 여러 배치에서 모아온 것이라 같은 화면이 중복 등장할 수 있다 — 동일 screen+component_type+text 조합은 하나로 취급한다.
 `;

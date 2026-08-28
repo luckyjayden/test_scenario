@@ -115,29 +115,31 @@ export async function POST(req: NextRequest) {
     const count = Math.min(REVIEW_BATCH_SIZE, totalPages - start);
     const pages = await getBatchPages(start, count);
 
-    // Tone/manner and service name are each fixed once, on the first batch,
-    // and reused for every later batch — re-detecting per batch would waste
-    // calls and could disagree with itself across the document. Service name
-    // detection failing silently (empty string) is fine — the reviewer
-    // prompt falls back to inferring it from whatever the current batch
-    // shows, same as before this was added.
+    // Tone/manner and service name are each fixed once — as soon as
+    // detection succeeds — and reused for every later batch, so every batch
+    // judges against the same standard. A real document can open with many
+    // pages of policy/reference tables before any actual screen (e.g. 20
+    // pages of 배달/포장 정책 설명), and if batch 0 lands entirely in that
+    // zone, inferring tone from documentation prose produces a confidently
+    // wrong baseline that then makes every real screen's normal copy look
+    // like a violation. detectTone/detectServiceName return an empty string
+    // when the given pages aren't real screens, so this keeps retrying on
+    // each early batch (capped, so a document with no real screens at all
+    // doesn't retry forever) until one actually succeeds.
+    const DETECTION_RETRY_CAP = 5;
     let toneMannerFinal = row.tone_manner_input || row.tone_manner_detected || '';
     let serviceNameFinal = row.service_name_detected || '';
     const dbUpdate: Record<string, unknown> = {};
-    if (batchIndex === 0) {
-      if (!toneMannerFinal) {
-        if (typeof toneManner === 'string' && toneManner.trim()) {
-          toneMannerFinal = toneManner.trim();
-          dbUpdate.tone_manner_input = toneMannerFinal;
-        } else {
-          toneMannerFinal = await detectTone(pages);
-          dbUpdate.tone_manner_detected = toneMannerFinal;
-        }
-      }
-      if (!serviceNameFinal) {
-        serviceNameFinal = await detectServiceName(pages);
-        dbUpdate.service_name_detected = serviceNameFinal;
-      }
+    if (!toneMannerFinal && typeof toneManner === 'string' && toneManner.trim()) {
+      toneMannerFinal = toneManner.trim();
+      dbUpdate.tone_manner_input = toneMannerFinal;
+    } else if (!toneMannerFinal && batchIndex < DETECTION_RETRY_CAP) {
+      toneMannerFinal = await detectTone(pages);
+      if (toneMannerFinal) dbUpdate.tone_manner_detected = toneMannerFinal;
+    }
+    if (!serviceNameFinal && batchIndex < DETECTION_RETRY_CAP) {
+      serviceNameFinal = await detectServiceName(pages);
+      if (serviceNameFinal) dbUpdate.service_name_detected = serviceNameFinal;
     }
 
     const batchResult = await reviewCopyBatch({
