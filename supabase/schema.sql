@@ -27,6 +27,14 @@ alter table public.generations
   add column if not exists progress_current integer,
   add column if not exists progress_total integer;
 
+-- Added for resumable per-batch extraction (app/api/generate processes one
+-- OpenAI batch per request instead of the whole document in one call, so a
+-- document of any page count stays well under Vercel's function duration
+-- limit). Holds { service_name, screen_scope_name, stages } accumulated so
+-- far across batches; cleared once the generation finishes.
+alter table public.generations
+  add column if not exists extraction_partial jsonb;
+
 create index if not exists generations_created_at_idx on public.generations (created_at desc);
 
 alter table public.generations enable row level security;

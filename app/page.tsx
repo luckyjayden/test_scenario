@@ -85,52 +85,40 @@ export default function UploadPage() {
       setStatus('generating');
       setProgress(null);
 
-      // /api/generate is one long synchronous call (it processes the PDF
-      // in page batches internally to stay under OpenAI's per-minute token
-      // limit — see lib/ai/extract.ts), so progress has to be polled from
-      // the side rather than read off the fetch itself.
-      const pollId = setInterval(async () => {
-        try {
-          const statusRes = await fetch(`/api/status/${generationId}`);
-          if (!statusRes.ok) return;
-          const { progress_current, progress_total } = await statusRes.json();
-          if (progress_current != null && progress_total != null) {
-            setProgress({ current: progress_current, total: progress_total });
-          }
-        } catch {
-          /* transient poll failure — next tick will retry */
-        }
-      }, 1500);
-
-      let res: Response;
-      try {
-        res = await fetch('/api/generate', {
+      // app/api/generate processes exactly one OpenAI batch per request (see
+      // lib/ai/extract.ts) so a single call never risks Vercel's function
+      // duration limit no matter how large the document is — this loop is
+      // what drives it through every batch, one sequential request at a
+      // time, updating progress straight from each response.
+      let scenarioCount = 0;
+      let stepCount = 0;
+      for (;;) {
+        const res = await fetch('/api/generate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ generationId, author: author || '작성자 미입력' }),
         });
-      } finally {
-        clearInterval(pollId);
-      }
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}));
-        throw new Error(body.error || `생성 실패 (HTTP ${res.status})`);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}));
+          throw new Error(body.error || `생성 실패 (HTTP ${res.status})`);
+        }
+        const data = await res.json();
+        if (data.done) {
+          scenarioCount = data.scenarioCount;
+          stepCount = data.stepCount;
+          break;
+        }
+        setProgress({ current: data.progress.current, total: data.progress.total });
       }
 
-      const scenarioCount = Number(res.headers.get('X-Scenario-Count') || '0');
-      const stepCount = Number(res.headers.get('X-Step-Count') || '0');
-      const outNameHeader = res.headers.get('X-Output-Filename');
-      const outName = outNameHeader ? decodeURIComponent(outNameHeader) : 'test-scenario.xlsx';
-
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
+      // /api/download streams the finished xlsx with the correct
+      // Content-Disposition filename (RFC 5987-encoded Korean name) — no
+      // need to re-derive or decode a filename on the client.
       const a = document.createElement('a');
-      a.href = url;
-      a.download = outName;
+      a.href = `/api/download/${generationId}`;
       document.body.appendChild(a);
       a.click();
       a.remove();
-      URL.revokeObjectURL(url);
 
       setSummary({ scenarioCount, stepCount });
       setStatus('done');
