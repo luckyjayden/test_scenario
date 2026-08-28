@@ -110,12 +110,16 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      // jpg + a moderate scale keeps per-page buffers small enough to fit
-      // within Vercel Hobby's 2GB function memory cap — UI mockup text
-      // stays legible at this quality, and unlike PNG, pdf-to-img never
-      // holds an uncompressed bitmap the same size as the encoded output.
+      // jpg keeps per-page buffers small (unlike PNG, pdf-to-img never holds
+      // an uncompressed bitmap the same size as the encoded output), but
+      // scale controls the *transient* canvas pdfjs allocates while
+      // rendering a page — measured locally at scale 1.5, a single
+      // image-heavy slide in a real 화면설계서 spiked RSS to ~1.7GB mid-batch
+      // (confirmed as the cause of two production OOM kills on Vercel
+      // Hobby's 2GB cap). 1.0 cut that same page's peak to ~1GB while
+      // keeping mockup text legible for the vision model.
       const document = await pdf(`data:application/pdf;base64,${pdfBuffer.toString('base64')}`, {
-        scale: 1.5,
+        scale: 1.0,
         format: 'jpg',
       });
       pdfDocument = document;
