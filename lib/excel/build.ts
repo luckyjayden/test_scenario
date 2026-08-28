@@ -299,6 +299,10 @@ export async function buildScenarioWorkbook(input: BuildInput): Promise<BuildOut
 
   legend.name = '범례';
   legend.pageSetup.printArea = 'A1:D34';
+  // The template leaves whatever cell was last selected when it was saved
+  // in Excel (e.g. F8) as this sheet's focus — reset it to A1 so switching
+  // to the 범례 tab always lands at the top of the sheet.
+  legend.views = [{ ...(legend.views?.[0] || {}), activeCell: 'A1' }];
 
   // ---------------------------------------------------------------
   // 6. 열었을 때 항상 표지가 보이도록 활성 시트 고정

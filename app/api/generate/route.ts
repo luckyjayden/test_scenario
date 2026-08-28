@@ -194,14 +194,13 @@ export async function POST(req: NextRequest) {
       today: todayISO(),
     });
 
-    // Appending the date + a short slice of generationId guarantees a unique
-    // filename per generation — without it, regenerating for the same
-    // service/screen combo (e.g. after fixing the source PDF) produces an
-    // identical name and silently overwrites the earlier download in the
-    // browser's Downloads folder.
+    // Appending the date keeps filenames from different days apart —
+    // regenerating for the same service/screen combo on the same day still
+    // produces an identical name (the generationId suffix that used to
+    // guarantee per-generation uniqueness was removed at the user's request
+    // since it just looked like meaningless noise in the filename).
     const datePart = todayISO().replace(/-/g, '');
-    const idPart = generationId.slice(0, 8);
-    const outputFilename = `${extraction.service_name || '테스트'}_${extraction.screen_scope_name || '시나리오'}_테스트시나리오_v1.0_${datePart}_${idPart}.xlsx`;
+    const outputFilename = `${extraction.service_name || '테스트'}_${extraction.screen_scope_name || '시나리오'}_테스트시나리오_v1.0_${datePart}.xlsx`;
     // Supabase Storage rejects object keys containing non-ASCII characters
     // (outputFilename is Korean) — keep the storage key ASCII-only and pass
     // the real Korean filename separately via output_filename, which
