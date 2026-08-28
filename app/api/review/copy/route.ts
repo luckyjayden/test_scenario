@@ -146,6 +146,7 @@ export async function POST(req: NextRequest) {
       pages,
       batchIndex,
       totalBatches,
+      totalPages,
       toneManner: toneMannerFinal,
       serviceName: serviceNameFinal,
     });

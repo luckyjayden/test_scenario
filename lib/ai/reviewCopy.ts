@@ -145,34 +145,25 @@ export async function detectServiceName(pages: PageImage[]): Promise<string> {
   }
 }
 
-// Phase 1 (per batch, vision): extract issues (findings) plus a full
-// inventory of repeatable-component instances (component_instances). This
-// batch does NOT judge cross-screen consistency — it can only see its own
-// pages, so any consistency verdict it made could contradict another
-// batch's. That judgment is deferred entirely to synthesizeConsistency below.
-export async function reviewCopyBatch(params: {
+// One raw OpenAI call over a specific, contiguous page range. Split out from
+// reviewCopyBatch so a truncated response can retry on a smaller slice of
+// the same batch instead of failing the whole batch outright (see below).
+async function callReviewRange(params: {
+  client: OpenAI;
   pages: PageImage[];
-  batchIndex: number;
-  totalBatches: number;
+  startPage: number;
+  endPage: number;
+  totalPages: number;
   toneManner: string;
   serviceName: string;
-}): Promise<CopyReviewBatchResult> {
-  if (!process.env.OPENAI_API_KEY) {
-    throw new ExtractionError(
-      'OPENAI_API_KEY가 설정되어 있지 않습니다. Vercel 프로젝트 환경변수에 본인의 OpenAI API 키를 추가해주세요.'
-    );
-  }
-
-  const { pages, batchIndex, totalBatches, toneManner, serviceName } = params;
-  const startPage = batchIndex * REVIEW_BATCH_SIZE + 1;
-  const endPage = startPage + pages.length - 1;
+  label: string; // for error messages, e.g. "배치 2/11" or "배치 2/11의 4~6페이지"
+}): Promise<{ result: CopyReviewBatchResult | null; truncated: boolean }> {
+  const { client, pages, startPage, endPage, totalPages, toneManner, serviceName, label } = params;
 
   const instructionText =
-    totalBatches > 1
-      ? `이 화면설계서는 여러 배치로 나뉘어 전달되며, 이번 요청에는 ${startPage}~${endPage}페이지(총 ${totalBatches}개 배치 중 ${batchIndex + 1}번째)만 첨부되어 있어. 이 배치에 포함된 화면의 문구만 검수해줘. 화면 간 일관성은 판단하지 마 — component_instances만 빠짐없이 수집해줘.`
+    totalPages > pages.length
+      ? `이 화면설계서는 여러 배치로 나뉘어 전달되며, 이번 요청에는 ${startPage}~${endPage}페이지(전체 ${totalPages}페이지 중 일부)만 첨부되어 있어. 이 배치에 포함된 화면의 문구만 검수해줘. 화면 간 일관성은 판단하지 마 — component_instances만 빠짐없이 수집해줘.`
       : '이 화면설계서 전체의 문구를 검수해줘. 아래 이미지는 문서의 페이지 순서대로 첨부되어 있어.';
-
-  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 5 });
 
   let completion;
   try {
@@ -191,32 +182,96 @@ export async function reviewCopyBatch(params: {
     });
   } catch (err) {
     if (err instanceof OpenAI.RateLimitError) {
-      throw new ExtractionError(
-        `OpenAI 계정의 분당 토큰 사용량 한도를 초과했습니다 (배치 ${batchIndex + 1}/${totalBatches} 처리 중). 잠시 후 다시 시도해주세요.`
-      );
+      throw new ExtractionError(`OpenAI 계정의 분당 토큰 사용량 한도를 초과했습니다 (${label} 처리 중). 잠시 후 다시 시도해주세요.`);
     }
     throw err;
   }
 
   const raw = completion.choices[0]?.message?.content;
   if (!raw) {
-    throw new ExtractionError(`모델이 응답을 반환하지 않았습니다 (배치 ${batchIndex + 1}/${totalBatches}). 다시 시도해주세요.`);
+    throw new ExtractionError(`모델이 응답을 반환하지 않았습니다 (${label}). 다시 시도해주세요.`);
   }
 
   try {
-    return JSON.parse(raw) as CopyReviewBatchResult;
+    return { result: JSON.parse(raw) as CopyReviewBatchResult, truncated: false };
   } catch {
     // finish_reason 'length' means the response was cut off mid-JSON by
-    // max_completion_tokens — a busy page with many findings can still hit
-    // this even at REVIEW_BATCH_SIZE=6, so surface it distinctly from a
-    // genuine malformed-output case.
+    // max_completion_tokens — a page with unusually many findings/instances
+    // can still hit this even at REVIEW_BATCH_SIZE=6. Report it as truncated
+    // rather than throwing here so the caller can retry on a smaller slice.
     if (completion.choices[0]?.finish_reason === 'length') {
+      return { result: null, truncated: true };
+    }
+    throw new ExtractionError(`모델 응답을 JSON으로 파싱하지 못했습니다 (${label}). 다시 시도해주세요.`);
+  }
+}
+
+// Phase 1 (per batch, vision): extract issues (findings) plus a full
+// inventory of repeatable-component instances (component_instances). This
+// batch does NOT judge cross-screen consistency — it can only see its own
+// pages, so any consistency verdict it made could contradict another
+// batch's. That judgment is deferred entirely to synthesizeConsistency below.
+export async function reviewCopyBatch(params: {
+  pages: PageImage[];
+  batchIndex: number;
+  totalBatches: number;
+  totalPages: number;
+  toneManner: string;
+  serviceName: string;
+}): Promise<CopyReviewBatchResult> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new ExtractionError(
+      'OPENAI_API_KEY가 설정되어 있지 않습니다. Vercel 프로젝트 환경변수에 본인의 OpenAI API 키를 추가해주세요.'
+    );
+  }
+
+  const { pages, batchIndex, totalBatches, totalPages, toneManner, serviceName } = params;
+  const batchStartPage = batchIndex * REVIEW_BATCH_SIZE + 1;
+  const client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 5 });
+
+  // Recursively halves the page range on truncation instead of failing the
+  // batch and asking the user to manually split their file — a single
+  // unusually dense page (lots of findings/component_instances) no longer
+  // takes the whole 6-page batch down with it.
+  async function reviewRangeWithSplit(rangePages: PageImage[], startPage: number): Promise<CopyReviewBatchResult> {
+    const endPage = startPage + rangePages.length - 1;
+    const label =
+      totalBatches > 1
+        ? `배치 ${batchIndex + 1}/${totalBatches}${rangePages.length < pages.length ? `의 ${startPage}~${endPage}페이지` : ''}`
+        : `${startPage}~${endPage}페이지`;
+
+    const { result, truncated } = await callReviewRange({
+      client,
+      pages: rangePages,
+      startPage,
+      endPage,
+      totalPages,
+      toneManner,
+      serviceName,
+      label,
+    });
+
+    if (!truncated) return result as CopyReviewBatchResult;
+
+    if (rangePages.length === 1) {
       throw new ExtractionError(
-        `이 배치(${batchIndex + 1}/${totalBatches})의 응답이 길이 제한으로 잘렸습니다. 재시도해도 반복되면 화면 수가 적은 파일로 나눠서 업로드해주세요.`
+        `${label}의 응답이 길이 제한으로 계속 잘립니다 (이슈가 유난히 많은 화면으로 보입니다). 해당 페이지만 별도 파일로 나눠서 업로드해주세요.`
       );
     }
-    throw new ExtractionError(`모델 응답을 JSON으로 파싱하지 못했습니다 (배치 ${batchIndex + 1}/${totalBatches}). 다시 시도해주세요.`);
+
+    const mid = Math.ceil(rangePages.length / 2);
+    // Sequential, not parallel — this only runs on the rare truncation path,
+    // and staying sequential avoids adding extra concurrent load right when
+    // a batch has already proven to be unusually token-heavy.
+    const leftResult = await reviewRangeWithSplit(rangePages.slice(0, mid), startPage);
+    const rightResult = await reviewRangeWithSplit(rangePages.slice(mid), startPage + mid);
+    return {
+      findings: [...leftResult.findings, ...rightResult.findings],
+      component_instances: [...leftResult.component_instances, ...rightResult.component_instances],
+    };
   }
+
+  return reviewRangeWithSplit(pages, batchStartPage);
 }
 
 // Phase 2 (once, text-only — no images, so this is cheap and safe regardless
