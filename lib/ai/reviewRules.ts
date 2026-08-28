@@ -20,11 +20,19 @@ export const COPY_REVIEW_SYSTEM_PROMPT = `당신은 UX 라이팅 검수 전문�
 ## 2. 톤앤매너 기준
 {{TONE_MANNER}}
 
+## 2-1. 이 문서가 다루는 서비스/앱 이름
+{{SERVICE_NAME}}
+이 이름은 브랜드명이다. 버튼·문구 어디에 등장하든 (예: 타사 로그인 옵션과 나란히 있는 '[서비스명] 로그인'처럼) 정상적인 자사 브랜딩이므로 "불필요한 표현"·"군더더기"·"비공식적/캐주얼한 표현"으로 지적하지 않는다.
+
 ## 3. findings 이슈 판단 기준
 - 위 톤앤매너와 어긋나는 어투/문체
 - 사용자에게 혼란을 줄 수 있는 모호한 표현
 - 불필요하게 딱딱하거나 지나치게 격식적인/캐주얼한 표현 (톤앤매너 기준과 무관하게 화면 성격에 안 맞는 경우)
 - 오탈자, 비문
+
+### 3-1. 근거 없는 어투 지적 금지
+- '~해 주세요' 체는 한국어 UX 라이팅에서 이미 널리 쓰이는 정중한 존댓말이다. 이 자체를 '비격식적'이라거나 '더 격식 있게(예: ~하시기 바랍니다)' 고치라고 지적하지 않는다.
+- 어투/격식 관련 이슈는 반드시 **같은 문서 안에 실제로 다르게 쓰인 대조 사례**가 있을 때만 보고한다 (예: 다른 화면은 전부 '~해 주세요'인데 한 곳만 '~하십시오'). 대조할 다른 사례 없이, 이 문구 하나만 보고 "더 격식 있어야 할 것 같다"는 주관적 인상만으로는 지적하지 않는다.
 
 ## 4. severity
 - high: 사용자가 오해하거나 잘못된 행동을 할 수 있는 수준
@@ -40,11 +48,21 @@ export const COPY_REVIEW_SYSTEM_PROMPT = `당신은 UX 라이팅 검수 전문�
 지정된 JSON 스키마 형식에 맞춰 결과를 한 번에 출력한다. 다른 설명 텍스트는 출력하지 않는다.
 `;
 
-export function buildCopyReviewPrompt(toneManner: string): string {
-  return COPY_REVIEW_SYSTEM_PROMPT.replace('{{TONE_MANNER}}', toneManner);
+export function buildCopyReviewPrompt(toneManner: string, serviceName: string): string {
+  return COPY_REVIEW_SYSTEM_PROMPT.replace('{{TONE_MANNER}}', toneManner).replace(
+    '{{SERVICE_NAME}}',
+    serviceName ? `'${serviceName}'` : '(식별되지 않음 — 반복 등장하는 이름이 보이면 그것을 서비스명으로 간주할 것)'
+  );
 }
 
 export const TONE_DETECT_SYSTEM_PROMPT = `당신은 UX 라이팅 전문가입니다. 첨부된 화면설계서 이미지들에 등장하는 문구들을 훑어보고, 이 서비스/문서 전반에서 관찰되는 톤앤매너를 한두 문장으로 요약해서 지정된 JSON 스키마 형식으로 출력하세요. 문체(존댓말/반말), 어투(딱딱함/발랄함), 이모지·특수문자 사용 여부, 사용자를 지칭하는 방식 등을 근거로 판단하세요.`;
+
+// One-off call (batch 0 only) so every later batch's reviewer already knows
+// the document's own brand name, instead of trying to re-infer it from
+// whatever a single ~12-page batch happens to show — the logo/header that
+// would make it obvious might not even be in that batch's page range (this
+// is exactly what caused "땡겨요 로그인" to be misjudged as awkward filler).
+export const SERVICE_NAME_DETECT_SYSTEM_PROMPT = `첨부된 화면설계서 이미지들에서 로고, 헤더, 타이틀 등에 반복적으로 등장하는 서비스/앱 이름을 찾아 지정된 JSON 스키마 형식으로 출력하세요. 식별할 수 없으면 빈 문자열을 출력하세요.`;
 
 // Phase 2 (text-only, no images): runs once after every batch's
 // component_instances have been collected, so exactly one call — not one
@@ -55,6 +73,8 @@ export const CONSISTENCY_SYNTHESIS_SYSTEM_PROMPT = `당신은 UX 라이팅 검�
 ## 원칙
 - 주어진 인스턴스 목록에 실제로 있는 내용만 근거로 판단한다. 목록에 없는 화면이나 문구를 지어내지 않는다.
 - 같은 component_type이 2회 이상 등장할 때만 판단한다. 1회만 등장하면 비교 대상이 없으므로 제외한다.
+- 문구가 완전히 똑같아야만 "일관됨"인 것이 아니다. 같은 구조/형식(예: '[제공자명] 로그인', '[항목명]을 선택하세요')을 따르면서 그 안의 대상(제공자명, 항목명 등)만 자연스럽게 다른 경우는 형식이 일관된 것으로 판단한다. 예: '카카오 로그인', '네이버 로그인', '[서비스 자체 이름] 로그인'은 서로 다른 로그인 수단을 가리키는 것일 뿐, 모두 '[제공자명] 로그인' 형식을 따르므로 일관됨(consistent: true)이다.
+- 정말 형식/구조 자체가 어긋나는 경우에만(예: 다른 버튼은 전부 '[제공자명] 로그인'인데 한 버튼만 '로그인하기' 또는 제공자명이 빠진 표기) consistent: false로 판단한다.
 - 불일치를 발견하면 note에 어느 화면(screen 값 그대로 인용)이 어떻게 다른지 구체적으로 적는다.
 - 이 목록은 여러 배치에서 모아온 것이라 같은 화면이 중복 등장할 수 있다 — 동일 screen+component_type+text 조합은 하나로 취급한다.
 `;

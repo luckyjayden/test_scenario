@@ -73,6 +73,7 @@ create table if not exists public.review_runs (
 
   tone_manner_input text,
   tone_manner_detected text,
+  service_name_detected text, -- auto-detected once (batch 0) so every batch's reviewer knows the document's own brand name
 
   status text not null default 'processing', -- processing | success | failed
   error_message text,

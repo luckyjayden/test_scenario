@@ -131,3 +131,27 @@ export const TONE_DETECT_SCHEMA = {
     required: ['tone_manner'],
   },
 } as const;
+
+// Also a one-off call (batch 0 only) — without knowing the document's own
+// service/app name up front, the per-batch reviewer has no way to tell a
+// first-party brand-name button ("땡겨요 로그인" next to "카카오 로그인" etc.)
+// apart from genuinely awkward copy, since any single batch might not
+// contain the logo/header that would otherwise make the brand obvious.
+export const SERVICE_NAME_DETECT_TOOL_NAME = 'submit_service_name';
+
+export const SERVICE_NAME_DETECT_SCHEMA = {
+  name: SERVICE_NAME_DETECT_TOOL_NAME,
+  description: '화면설계서가 다루는 서비스/앱 자체의 이름을 식별해 제출한다.',
+  input_schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      service_name: {
+        type: 'string',
+        description:
+          '로고, 헤더, 타이틀 등에 반복적으로 등장하는 이 문서의 서비스/앱 이름 (예: 땡겨요). 식별할 수 없으면 빈 문자열.',
+      },
+    },
+    required: ['service_name'],
+  },
+} as const;

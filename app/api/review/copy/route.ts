@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { pdf } from 'pdf-to-img';
-import { ExtractionError, PageImage, BATCH_SIZE, MAX_PDF_BYTES, MAX_IMAGES } from '@/lib/ai/extract';
-import { detectTone, reviewCopyBatch, synthesizeConsistency } from '@/lib/ai/reviewCopy';
+import { ExtractionError, PageImage, MAX_PDF_BYTES, MAX_IMAGES } from '@/lib/ai/extract';
+import { detectTone, detectServiceName, reviewCopyBatch, synthesizeConsistency, REVIEW_BATCH_SIZE } from '@/lib/ai/reviewCopy';
 import { CopyFinding, ComponentInstance } from '@/lib/ai/reviewSchema';
 import { supabase, STORAGE_BUCKET } from '@/lib/supabase';
 import { mimeForExt } from '@/lib/files';
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
 
   const { data: row, error: rowErr } = await supabase
     .from('review_runs')
-    .select('progress_current, progress_total, review_partial, tone_manner_input, tone_manner_detected')
+    .select('progress_current, progress_total, review_partial, tone_manner_input, tone_manner_detected, service_name_detected')
     .eq('id', runId)
     .single();
 
@@ -106,31 +106,47 @@ export async function POST(req: NextRequest) {
       throw new ExtractionError('업로드된 파일을 찾지 못했습니다. 다시 업로드해주세요.');
     }
 
-    const totalBatches = Math.max(1, Math.ceil(totalPages / BATCH_SIZE));
+    const totalBatches = Math.max(1, Math.ceil(totalPages / REVIEW_BATCH_SIZE));
     if (batchIndex >= totalBatches) {
       return NextResponse.json({ error: '이미 처리가 완료된 요청입니다.' }, { status: 409 });
     }
 
-    const start = batchIndex * BATCH_SIZE;
-    const count = Math.min(BATCH_SIZE, totalPages - start);
+    const start = batchIndex * REVIEW_BATCH_SIZE;
+    const count = Math.min(REVIEW_BATCH_SIZE, totalPages - start);
     const pages = await getBatchPages(start, count);
 
-    // Tone/manner is fixed once, on the first batch, and reused for every
-    // later batch — re-detecting per batch would waste calls and could
-    // disagree with itself across the document.
+    // Tone/manner and service name are each fixed once, on the first batch,
+    // and reused for every later batch — re-detecting per batch would waste
+    // calls and could disagree with itself across the document. Service name
+    // detection failing silently (empty string) is fine — the reviewer
+    // prompt falls back to inferring it from whatever the current batch
+    // shows, same as before this was added.
     let toneMannerFinal = row.tone_manner_input || row.tone_manner_detected || '';
+    let serviceNameFinal = row.service_name_detected || '';
     const dbUpdate: Record<string, unknown> = {};
-    if (batchIndex === 0 && !toneMannerFinal) {
-      if (typeof toneManner === 'string' && toneManner.trim()) {
-        toneMannerFinal = toneManner.trim();
-        dbUpdate.tone_manner_input = toneMannerFinal;
-      } else {
-        toneMannerFinal = await detectTone(pages);
-        dbUpdate.tone_manner_detected = toneMannerFinal;
+    if (batchIndex === 0) {
+      if (!toneMannerFinal) {
+        if (typeof toneManner === 'string' && toneManner.trim()) {
+          toneMannerFinal = toneManner.trim();
+          dbUpdate.tone_manner_input = toneMannerFinal;
+        } else {
+          toneMannerFinal = await detectTone(pages);
+          dbUpdate.tone_manner_detected = toneMannerFinal;
+        }
+      }
+      if (!serviceNameFinal) {
+        serviceNameFinal = await detectServiceName(pages);
+        dbUpdate.service_name_detected = serviceNameFinal;
       }
     }
 
-    const batchResult = await reviewCopyBatch({ pages, batchIndex, totalBatches, toneManner: toneMannerFinal });
+    const batchResult = await reviewCopyBatch({
+      pages,
+      batchIndex,
+      totalBatches,
+      toneManner: toneMannerFinal,
+      serviceName: serviceNameFinal,
+    });
 
     const mergedPartial: StoredPartial = {
       findings: [...partial.findings, ...batchResult.findings],
