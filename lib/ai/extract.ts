@@ -22,12 +22,15 @@ const MAX_PAGES = 60;
 // Splitting into smaller sequential batches keeps every individual request
 // safely under that ceiling regardless of account tier.
 const BATCH_SIZE = 12;
+export const MAX_IMAGES = 30;
 
 export class ExtractionError extends Error {}
 
 type ContentPart =
   | { type: 'text'; text: string }
   | { type: 'image_url'; image_url: { url: string; detail: 'high' } };
+
+export type PageImage = { buffer: Buffer; mime: string };
 
 export async function extractTestScenarios(
   pdfBuffer: Buffer,
@@ -74,7 +77,42 @@ export async function extractTestScenarios(
     throw new ExtractionError('PDF에서 페이지를 읽지 못했습니다. 파일이 손상되지 않았는지 확인해주세요.');
   }
 
-  const batches: Buffer[][] = [];
+  return extractFromImages(
+    pages.map((buffer) => ({ buffer, mime: 'image/jpeg' })),
+    onProgress
+  );
+}
+
+// Images (JPG/PNG/WEBP) skip PDF rasterization and go straight to the model
+// one-image-per-page, capped lower than MAX_PAGES since each is uploaded
+// individually by hand rather than exported as a single batch document.
+export async function extractFromImages(
+  images: PageImage[],
+  onProgress?: (current: number, total: number) => void | Promise<void>
+): Promise<ExtractionResult> {
+  if (images.length === 0) {
+    throw new ExtractionError('이미지를 찾지 못했습니다. 파일이 손상되지 않았는지 확인해주세요.');
+  }
+  if (images.length > MAX_IMAGES) {
+    throw new ExtractionError(
+      `이미지 개수(${images.length}장)가 처리 가능한 최대(${MAX_IMAGES}장)를 초과했습니다. 파일을 나눠서 업로드해주세요.`
+    );
+  }
+
+  return runExtraction(images, onProgress);
+}
+
+async function runExtraction(
+  pages: PageImage[],
+  onProgress?: (current: number, total: number) => void | Promise<void>
+): Promise<ExtractionResult> {
+  if (!process.env.OPENAI_API_KEY) {
+    throw new ExtractionError(
+      'OPENAI_API_KEY가 설정되어 있지 않습니다. Vercel 프로젝트 환경변수에 본인의 OpenAI API 키를 추가해주세요.'
+    );
+  }
+
+  const batches: PageImage[][] = [];
   for (let i = 0; i < pages.length; i += BATCH_SIZE) {
     batches.push(pages.slice(i, i + BATCH_SIZE));
   }
@@ -95,7 +133,10 @@ export async function extractTestScenarios(
 
     const pageContent: ContentPart[] = batch.flatMap((page, i) => [
       { type: 'text', text: `--- ${startPage + i}페이지 ---` },
-      { type: 'image_url', image_url: { url: `data:image/jpeg;base64,${page.toString('base64')}`, detail: 'high' } },
+      {
+        type: 'image_url',
+        image_url: { url: `data:${page.mime};base64,${page.buffer.toString('base64')}`, detail: 'high' },
+      },
     ]);
 
     const instructionText =

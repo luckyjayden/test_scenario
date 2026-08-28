@@ -301,6 +301,24 @@ export async function buildScenarioWorkbook(input: BuildInput): Promise<BuildOut
   legend.pageSetup.printArea = 'A1:D34';
 
   // ---------------------------------------------------------------
+  // 6. 열었을 때 항상 표지가 보이도록 활성 시트 고정
+  // ---------------------------------------------------------------
+  // The template's tab-selection state (whichever sheet was active when it
+  // was last saved in Excel) survives the load/write round-trip untouched —
+  // ExcelJS never derives it from sheet order. Left alone, the file opens on
+  // whatever sheet the template happened to have selected (마지막으로 만졌던
+  // 범례 시트), so it must be forced back to 표지 explicitly on every build.
+  const coverIndex = wb.worksheets.indexOf(cover);
+  wb.views = [{ ...(wb.views?.[0] || {}), activeTab: coverIndex, firstSheet: 0 }];
+  wb.worksheets.forEach((ws) => {
+    // `tabSelected` is part of the OOXML sheetView schema and ExcelJS's own
+    // xform reads/writes it (lib/xlsx/xform/sheet/sheet-view-xform.js), but
+    // it's missing from the published WorksheetView type — same class of gap
+    // as the Buffer<T> cast below.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ws.views = [{ ...(ws.views?.[0] || {}), tabSelected: ws === cover }] as any;
+  });
+
   const buffer = (await wb.xlsx.writeBuffer()) as unknown as Buffer;
   return { buffer, scenarioCount, stepCount };
 }

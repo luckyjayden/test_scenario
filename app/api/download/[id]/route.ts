@@ -18,15 +18,27 @@ export async function GET(_req: NextRequest, { params }: { params: { id: string 
     return NextResponse.json({ error: '이 이력에는 저장된 파일이 없습니다 (생성 실패 건일 수 있어요).' }, { status: 404 });
   }
 
-  const { data: signed, error: signErr } = await supabase.storage
+  // Proxy the file instead of redirecting to a signed URL: Supabase Storage's
+  // `download` filename option isn't RFC 5987 encoded, so a Korean
+  // output_filename comes through the browser garbled. Streaming it back
+  // ourselves lets us set Content-Disposition the same way /api/generate
+  // does for the initial download, which renders correctly.
+  const { data: fileBlob, error: downloadErr } = await supabase.storage
     .from(STORAGE_BUCKET)
-    .createSignedUrl(row.output_xlsx_path, 60, {
-      download: row.output_filename || undefined,
-    });
+    .download(row.output_xlsx_path);
 
-  if (signErr || !signed) {
-    return NextResponse.json({ error: signErr?.message || '다운로드 링크 생성에 실패했습니다.' }, { status: 500 });
+  if (downloadErr || !fileBlob) {
+    return NextResponse.json({ error: downloadErr?.message || '파일 다운로드에 실패했습니다.' }, { status: 500 });
   }
 
-  return NextResponse.redirect(signed.signedUrl);
+  const buffer = Buffer.from(await fileBlob.arrayBuffer());
+  const filename = row.output_filename || 'test-scenario.xlsx';
+
+  return new NextResponse(new Uint8Array(buffer), {
+    status: 200,
+    headers: {
+      'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    },
+  });
 }
